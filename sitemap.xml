@@ -3,11 +3,32 @@
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   
   <url>
-    <loc>https://josephbak.github.io/categories/</loc>
+    <loc>https://josephbak.github.io/</loc>
+    <lastmod>2019-10-18T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>https://josephbak.github.io/</loc>
+    <loc>https://josephbak.github.io/posts/</loc>
+    <lastmod>2019-10-18T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>https://josephbak.github.io/posts/voting-method/</loc>
+    <lastmod>2019-10-18T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>https://josephbak.github.io/posts/common-encoding-methods/</loc>
+    <lastmod>2019-10-13T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>https://josephbak.github.io/about/</loc>
+    <lastmod>2019-10-10T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>https://josephbak.github.io/categories/</loc>
   </url>
   
   <url>

@@ -1,0 +1,227 @@
+<!doctype html>
+
+<html lang="en">
+
+<head>
+  <title>Voting method - Ensemble 1 - Joseph Bak</title>
+  <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="Kiera: A Hugo theme for creative and technical writing." />
+<meta name="author" content="Joseph Bak" /><meta property="og:title" content="Voting method - Ensemble 1" />
+<meta property="og:description" content="This is the first post of the series of emsemble method.
+Ensemble Learning The idea of ensemble learning is to build a prediction model by combining the strenths of a collection of simpler base models." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://josephbak.github.io/posts/voting-method/" />
+<meta property="article:published_time" content="2019-10-18T00:00:00+00:00" />
+<meta property="article:modified_time" content="2019-10-18T00:00:00+00:00" />
+
+<meta name="twitter:card" content="summary"/>
+<meta name="twitter:title" content="Voting method - Ensemble 1"/>
+<meta name="twitter:description" content="This is the first post of the series of emsemble method.
+Ensemble Learning The idea of ensemble learning is to build a prediction model by combining the strenths of a collection of simpler base models."/>
+
+<meta name="generator" content="Hugo 0.58.3" />
+    
+    <script src="https://josephbak.github.io/js/mathjax-config.js" defer></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css" integrity="sha256-l85OmPOjvil/SOvVt3HnSSjzF1TUMyT9eV0c2BzEGzU=" crossorigin="anonymous" />
+  <link rel="stylesheet" href="https://josephbak.github.io/fontawesome/css/all.min.css" />
+  
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto+Slab|Ruda" />
+  
+  
+  <link rel="stylesheet" type="text/css" href="https://josephbak.github.io/css/styles.css" /></head>
+
+<body>
+  <div id="container">
+    <header>
+      <h1>
+                <a href="https://josephbak.github.io/">Joseph Bak</a>
+            </h1>
+
+      <ul id="social-media">
+             <li>
+               <a href="https://github.com/josephbak" title="GitHub">
+               <i class="fab fa-github fa-lg"></i>
+               </a>
+             </li>
+      </ul>
+      
+    </header>
+
+    
+<nav>
+    <ul>
+        
+        <li>
+            <a class="" href="https://josephbak.github.io/posts">
+                <i class="fa-li fa  fa-lg"></i><span>Posts</span>
+            </a>
+        </li>
+        
+        <li>
+            <a class="" href="https://josephbak.github.io/about/">
+                <i class="fa-li fa  fa-lg"></i><span>About</span>
+            </a>
+        </li>
+        
+    </ul>
+</nav>
+
+
+    <main>
+
+
+
+
+<article>
+
+    <h1>Voting method - Ensemble 1</h1>
+
+    
+      <aside>
+    <ul>
+        <li>
+            <time class="post-date" datetime="2019-10-18T00:00:00Z">Oct 18, 2019</time>
+        </li>
+        
+
+        
+
+        <li>4 minutes read</li>
+    </ul>
+</aside>
+
+    
+
+    
+
+
+    
+
+<p>This is the first post of the series of emsemble method.</p>
+
+<h2 id="ensemble-learning">Ensemble Learning</h2>
+
+<p>The idea of ensemble learning is to build a prediction model by combining the strenths of a collection of simpler base models. A collection of base models is called an ensemble, and ensemble learning algorithm is called an ensemble method.</p>
+
+<p>Most common ensemble methods are voting, bagging, boosting, and stacking. In this post, I will go over the voting method for classification task.</p>
+
+<h3 id="voting">Voting</h3>
+
+<p>This is the most simple ensemble method. The basic idea is that we predict the class that gets the most votes of base predictors, which is called a hard voting, after training diverse classifiers.</p>
+
+<p>If each base model can estimate probabiliy, we can predict the class with the highest class probability, averaged over all the individual base models. This is called a soft voting and it often produces a better result than a hard voting.
+Symbolically, suppose $f_{i}$ represents a predictor $i = 1, &hellip;, n$ and each predictor is different from each other. Then the hard voting classifer, $f$, classifies data $x$,</p>
+
+<p>$$f(x) = mode({ f_i (x)} _{i = 1}^{n} ).$$</p>
+
+<p>Also, for regression, the voting regressor takes the average over all predictors which is</p>
+
+<p>$$f(x) = \frac{1}{n}\sum_{i = 1}^{n} f_i(x).$$</p>
+
+<p>I will illustrate the voting method using a generated data.</p>
+
+<figure>
+    <img src="https://josephbak.github.io/img/Voting-method/data.png"
+         alt="data image"/> 
+</figure>
+
+
+<p>Let&rsquo;s divide them into a train set and a test set.</p>
+
+<figure>
+    <img src="https://josephbak.github.io/img/Voting-method/train_test.png"
+         alt="data image"/> 
+</figure>
+
+
+<p>For base classifiers, I have a Logistic Regression classifier, a Decision Tree classifier, a SVM classifier, a K-Nearest Neighbors classifier, and a andom Forest classifier. Thier decision boundaries including the hard voting classifier&rsquo;s on the train set with cross validation are shown below:</p>
+
+<figure>
+    <img src="https://josephbak.github.io/img/Voting-method/all_decision_bnd.png"
+         alt="data image"/> 
+</figure>
+
+
+<p>Comparing the decision boundaries of hard voting and soft voting:</p>
+
+<figure>
+    <img src="https://josephbak.github.io/img/Voting-method/voting_decision_bnd.png"
+         alt="data image"/> 
+</figure>
+
+
+<p>The average accuracy and standard diviations for each classifier is:<br />
+Accuracy: 0.8999, std: 0.0149 [Logistic Regression]<br />
+Accuracy: 0.8689, std: 0.0086 [Decision Tree]<br />
+Accuracy: 0.9088, std: 0.0224 [SVC]<br />
+Accuracy: 0.8955, std: 0.0179 [k-NN]<br />
+Accuracy: 0.8821, std: 0.0143 [Random Forest]<br />
+Accuracy: 0.9000, std: 0.0060 [Hard voting]<br />
+Accuracy: 0.9022, std: 0.0126 [Soft voting]</p>
+
+<p>It seems the support vector classifier outperforms both voting classifiers on the train set. Let&rsquo;s check on the test set.</p>
+
+<p>Accuracy of Logistic Regression: 0.8867<br />
+Accuracy of Decision Tree: 0.8733<br />
+Accuracy of SVC: 0.8733<br />
+Accuracy of k-NN: 0.8733<br />
+Accuracy of Random Forest: 0.8867<br />
+Accuracy of Hard voting: 0.8933<br />
+Accuracy of Soft voting: 0.8933</p>
+
+<p>As we can see, the support vector classifier is badly overfitting and the soft voting classifier outperforms all as expected.</p>
+
+<h3 id="why-does-voting-method-work">Why does voting method work?</h3>
+
+<p>This is roughly because of the law of large numbers. Suppose we have 1000 base classifiers that are individually correct only 51% of the time. If we represent this with a random variable, for each classifier $f_i$, we have $X_i = 1$ with 51% and $X_i = 0$ with 49%, where 1 indicates that this classifier is correct. Assuming that each classifier is independent, the probability of getting majority of right classifiers is that</p>
+
+<p>$$P( \sum_{i=1}^{1000} X_i \geq 501 ) = 1 - P( \sum _{i=1}^{1000} X_i \leq 500 ) = 0.7261 $$</p>
+
+<p>The probability of getting majority of right classifiers will increase as we take more number of base classifiers. However, this is only true when all classifiers are independent and this is clearly not the case since they are all trained on the same data. To make this reasoning work better, we should make them more independent. One way to do it when we train them on the same data is to use a very different algorithm for each classifier. This will increase the chance that they will make different types of errors which lead to the improvement of the ensemble&rsquo;s accurary.</p>
+
+<p>Another way to make them more independent is to use different data for each classifier which I will cover in the next post.</p>
+
+<h4 id="code">Code</h4>
+
+<p>In order to try out the code, use my notebook <a href="https://github.com/JosephBak/experiments_with_python/blob/master/Ensemble_method/Voting_method.ipynb">ipython notebook</a>.</p>
+
+
+</article>
+
+
+<section class="post-nav">
+    <ul>
+        
+        <li>
+            <a href="https://josephbak.github.io/posts/common-encoding-methods/"><i class="fa fa-chevron-circle-left"></i> Common Encoding Methods</a>
+        </li>
+        
+        
+    </ul>
+</section>
+  
+    
+    
+  
+
+
+
+
+
+</main>
+    <footer>
+        <h6>Copyright &copy; 2020 - Joseph Bak |
+            Rendered by <a href="https://gohugo.io" title="Hugo">Hugo</a> |
+            <a href="https://josephbak.github.io/index.xml">Subscribe </a></h6>
+    </footer>
+</div>
+<script src="https://josephbak.github.io/js/scripts.js"></script>
+
+</body>
+
+</html>
+

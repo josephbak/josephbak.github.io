@@ -10,5 +10,139 @@
        <atom:link href="https://josephbak.github.io/tags/index.xml" rel="self" type="application/rss+xml" />
    
    
+     <item>
+       <title>Voting method - Ensemble 1</title>
+       <link>https://josephbak.github.io/posts/voting-method/</link>
+       <pubDate>Fri, 18 Oct 2019 00:00:00 +0000</pubDate>
+       
+       <guid>https://josephbak.github.io/posts/voting-method/</guid>
+       <description>
+
+&lt;p&gt;This is the first post of the series of emsemble method.&lt;/p&gt;
+
+&lt;h2 id=&#34;ensemble-learning&#34;&gt;Ensemble Learning&lt;/h2&gt;
+
+&lt;p&gt;The idea of ensemble learning is to build a prediction model by combining the strenths of a collection of simpler base models. A collection of base models is called an ensemble, and ensemble learning algorithm is called an ensemble method.&lt;/p&gt;
+
+&lt;p&gt;Most common ensemble methods are voting, bagging, boosting, and stacking. In this post, I will go over the voting method for classification task.&lt;/p&gt;
+
+&lt;h3 id=&#34;voting&#34;&gt;Voting&lt;/h3&gt;
+
+&lt;p&gt;This is the most simple ensemble method. The basic idea is that we predict the class that gets the most votes of base predictors, which is called a hard voting, after training diverse classifiers.&lt;/p&gt;
+
+&lt;p&gt;If each base model can estimate probabiliy, we can predict the class with the highest class probability, averaged over all the individual base models. This is called a soft voting and it often produces a better result than a hard voting.
+Symbolically, suppose $f_{i}$ represents a predictor $i = 1, &amp;hellip;, n$ and each predictor is different from each other. Then the hard voting classifer, $f$, classifies data $x$,&lt;/p&gt;
+
+&lt;p&gt;$$f(x) = mode({ f_i (x)} _{i = 1}^{n} ).$$&lt;/p&gt;
+
+&lt;p&gt;Also, for regression, the voting regressor takes the average over all predictors which is&lt;/p&gt;
+
+&lt;p&gt;$$f(x) = \frac{1}{n}\sum_{i = 1}^{n} f_i(x).$$&lt;/p&gt;
+
+&lt;p&gt;I will illustrate the voting method using a generated data.&lt;/p&gt;
+
+&lt;figure&gt;
+    &lt;img src=&#34;https://josephbak.github.io/img/Voting-method/data.png&#34;
+         alt=&#34;data image&#34;/&gt; 
+&lt;/figure&gt;
+
+
+&lt;p&gt;Let&amp;rsquo;s divide them into a train set and a test set.&lt;/p&gt;
+
+&lt;figure&gt;
+    &lt;img src=&#34;https://josephbak.github.io/img/Voting-method/train_test.png&#34;
+         alt=&#34;data image&#34;/&gt; 
+&lt;/figure&gt;
+
+
+&lt;p&gt;For base classifiers, I have a Logistic Regression classifier, a Decision Tree classifier, a SVM classifier, a K-Nearest Neighbors classifier, and a andom Forest classifier. Thier decision boundaries including the hard voting classifier&amp;rsquo;s on the train set with cross validation are shown below:&lt;/p&gt;
+
+&lt;figure&gt;
+    &lt;img src=&#34;https://josephbak.github.io/img/Voting-method/all_decision_bnd.png&#34;
+         alt=&#34;data image&#34;/&gt; 
+&lt;/figure&gt;
+
+
+&lt;p&gt;Comparing the decision boundaries of hard voting and soft voting:&lt;/p&gt;
+
+&lt;figure&gt;
+    &lt;img src=&#34;https://josephbak.github.io/img/Voting-method/voting_decision_bnd.png&#34;
+         alt=&#34;data image&#34;/&gt; 
+&lt;/figure&gt;
+
+
+&lt;p&gt;The average accuracy and standard diviations for each classifier is:&lt;br /&gt;
+Accuracy: 0.8999, std: 0.0149 [Logistic Regression]&lt;br /&gt;
+Accuracy: 0.8689, std: 0.0086 [Decision Tree]&lt;br /&gt;
+Accuracy: 0.9088, std: 0.0224 [SVC]&lt;br /&gt;
+Accuracy: 0.8955, std: 0.0179 [k-NN]&lt;br /&gt;
+Accuracy: 0.8821, std: 0.0143 [Random Forest]&lt;br /&gt;
+Accuracy: 0.9000, std: 0.0060 [Hard voting]&lt;br /&gt;
+Accuracy: 0.9022, std: 0.0126 [Soft voting]&lt;/p&gt;
+
+&lt;p&gt;It seems the support vector classifier outperforms both voting classifiers on the train set. Let&amp;rsquo;s check on the test set.&lt;/p&gt;
+
+&lt;p&gt;Accuracy of Logistic Regression: 0.8867&lt;br /&gt;
+Accuracy of Decision Tree: 0.8733&lt;br /&gt;
+Accuracy of SVC: 0.8733&lt;br /&gt;
+Accuracy of k-NN: 0.8733&lt;br /&gt;
+Accuracy of Random Forest: 0.8867&lt;br /&gt;
+Accuracy of Hard voting: 0.8933&lt;br /&gt;
+Accuracy of Soft voting: 0.8933&lt;/p&gt;
+
+&lt;p&gt;As we can see, the support vector classifier is badly overfitting and the soft voting classifier outperforms all as expected.&lt;/p&gt;
+
+&lt;h3 id=&#34;why-does-voting-method-work&#34;&gt;Why does voting method work?&lt;/h3&gt;
+
+&lt;p&gt;This is roughly because of the law of large numbers. Suppose we have 1000 base classifiers that are individually correct only 51% of the time. If we represent this with a random variable, for each classifier $f_i$, we have $X_i = 1$ with 51% and $X_i = 0$ with 49%, where 1 indicates that this classifier is correct. Assuming that each classifier is independent, the probability of getting majority of right classifiers is that&lt;/p&gt;
+
+&lt;p&gt;$$P( \sum_{i=1}^{1000} X_i \geq 501 ) = 1 - P( \sum _{i=1}^{1000} X_i \leq 500 ) = 0.7261 $$&lt;/p&gt;
+
+&lt;p&gt;The probability of getting majority of right classifiers will increase as we take more number of base classifiers. However, this is only true when all classifiers are independent and this is clearly not the case since they are all trained on the same data. To make this reasoning work better, we should make them more independent. One way to do it when we train them on the same data is to use a very different algorithm for each classifier. This will increase the chance that they will make different types of errors which lead to the improvement of the ensemble&amp;rsquo;s accurary.&lt;/p&gt;
+
+&lt;p&gt;Another way to make them more independent is to use different data for each classifier which I will cover in the next post.&lt;/p&gt;
+
+&lt;h4 id=&#34;code&#34;&gt;Code&lt;/h4&gt;
+
+&lt;p&gt;In order to try out the code, use my notebook &lt;a href=&#34;https://github.com/JosephBak/experiments_with_python/blob/master/Ensemble_method/Voting_method.ipynb&#34;&gt;ipython notebook&lt;/a&gt;.&lt;/p&gt;
+</description>
+     </item>
+   
+     <item>
+       <title>Common Encoding Methods</title>
+       <link>https://josephbak.github.io/posts/common-encoding-methods/</link>
+       <pubDate>Sun, 13 Oct 2019 00:00:00 +0000</pubDate>
+       
+       <guid>https://josephbak.github.io/posts/common-encoding-methods/</guid>
+       <description>&lt;p&gt;Before going over the encoding methods, why do we need encoding?
+Common reasons are:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;Most machine leaning algortihm only takes numerical inputs but categorical inputs can be some type of string such as {male, female}.&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;Even if categorical feature have numeric data, they do not have numerical property like numerical data. For example, the zip code of Chelsea, NYC is 10001 and the zip code of Lower East Side, NYC is 10002. However, the sum of two zip codes, 10001 + 10002 = 20003, doesn&amp;rsquo;t mean anything.&lt;/p&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;There are many different encoding methods when it comes to  categorical data for a supervised machine learning algorithm. Here, I organize some of most common methods.
+Most common encoding methods:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.LabelEncoder.html&#34;&gt;Label encoding&lt;/a&gt;: this method changes every categorical value to a number.&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.OneHotEncoder.html&#34;&gt;One-hot encoding&lt;/a&gt;: this method takes each category value and turns it into a binary vetor whose length is the number of distinct values in category and all elements in the binary vector are zero except one element that specifies the category.&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.FeatureHasher.html&#34;&gt;Feature hashing&lt;/a&gt;: this method also vectorizes each category value (like one hot encoding). It works by applying a hash function to the features and using their hash values as indices directly.&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://contrib.scikit-learn.org/categorical-encoding/targetencoder.html&#34;&gt;Mean target encoding&lt;/a&gt;: This method encodes categorical value with the mean of the target variable.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;When to use each encoding method:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Label encoding: this simple encoding can be used when the purpose of encoding is only to change non-numeric categorical data to numerical data.&lt;/li&gt;
+&lt;li&gt;One-hot encoding: this can be used if the feature is nominal data which means there are no order among them.&lt;/li&gt;
+&lt;li&gt;Feature hashing: this can be used in the same case as in One-hot encoding and the number of distinct categories in the feature is large.&lt;/li&gt;
+&lt;li&gt;Mean target encoding: this cen be used if we want to bring out the relation between similar categories and the target itself.&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+     </item>
+   
  </channel>
 </rss>

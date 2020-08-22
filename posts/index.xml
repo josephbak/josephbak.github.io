@@ -1,14 +1,14 @@
 
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
  <channel>
-   <title>Joseph Bak</title>
-   <link>https://josephbak.github.io/</link>
-   <description>Recent content on Joseph Bak</description>
+   <title>Posts on Joseph Bak</title>
+   <link>https://josephbak.github.io/posts/</link>
+   <description>Recent content in Posts on Joseph Bak</description>
    <generator>Hugo -- gohugo.io</generator>
    <copyright>Copyright &amp;copy; 2020 - Joseph Bak</copyright>
    <lastBuildDate>Fri, 18 Oct 2019 00:00:00 +0000</lastBuildDate>
    
-       <atom:link href="https://josephbak.github.io/index.xml" rel="self" type="application/rss+xml" />
+       <atom:link href="https://josephbak.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
    
    
      <item>
