@@ -1,0 +1,623 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+	<title>My notes</title>
+	<subtitle>My notes site</subtitle>
+	<link rel="self" type="application/atom+xml" href="https://josephbak.github.io/notes/feed.xml"/>
+  <link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/"/>
+  
+	<updated>2025-10-03T00:00:00+00:00</updated>
+	
+	<id>https://josephbak.github.io/notes/feed.xml</id>
+	<entry xml:lang="en">
+		<title>Evolution of Branch Prediction and Its Parallels with SSA → SSI</title>
+		<published>2025-10-03T00:00:00+00:00</published>
+		<updated>2025-10-03T00:00:00+00:00</updated>
+		<link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/branch-prediction-ssa-note/"/>
+		<id>https://josephbak.github.io/notes/branch-prediction-ssa-note/</id>
+    
+		<content type="html" xml:base="https://josephbak.github.io/notes/branch-prediction-ssa-note/">&lt;h1 id=&quot;evolution-of-branch-prediction-and-its-parallels-with-ssa-ssi&quot;&gt;Evolution of Branch Prediction and Its Parallels with SSA → SSI&lt;a class=&quot;zola-anchor&quot; href=&quot;#evolution-of-branch-prediction-and-its-parallels-with-ssa-ssi&quot; aria-label=&quot;Anchor link for: evolution-of-branch-prediction-and-its-parallels-with-ssa-ssi&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h1&gt;
+&lt;h2 id=&quot;1-branch-prediction-evolution&quot;&gt;1. Branch Prediction Evolution&lt;a class=&quot;zola-anchor&quot; href=&quot;#1-branch-prediction-evolution&quot; aria-label=&quot;Anchor link for: 1-branch-prediction-evolution&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Branch prediction has been one of the most important microarchitectural
+techniques for exploiting instruction-level parallelism in CPUs.&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Static Prediction (pre-1980s):&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Early CPUs simply recorded which way the branch went last time
+and predicted the same outcome.&lt;&#x2F;li&gt;
+&lt;li&gt;Accuracy: ~85%.&lt;&#x2F;li&gt;
+&lt;li&gt;Hardware cost: ~1K bits.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Two-bit and Multi-bit Counters (1980s--1990s):&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Added history with saturating counters (2-bit, 3-bit, etc.).&lt;&#x2F;li&gt;
+&lt;li&gt;Improved accuracy to ~90--92%.&lt;&#x2F;li&gt;
+&lt;li&gt;Example: &quot;predict taken if counter ≥ threshold.&quot;&lt;&#x2F;li&gt;
+&lt;li&gt;Hardware: a few kilobits.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Global + Local History (1990s--2000s):&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Recognized that outcome may depend on &lt;em&gt;how you got there&lt;&#x2F;em&gt; (path
+history).&lt;&#x2F;li&gt;
+&lt;li&gt;E.g., &quot;Bob likes Jane&quot; vs &quot;Bob likes Jill&quot; example → different
+outcomes.&lt;&#x2F;li&gt;
+&lt;li&gt;Combined global history with counters.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Neural &#x2F; Perceptron Predictors (2000s--today):&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Use perceptron-like learning: weight vectors times history bits.&lt;&#x2F;li&gt;
+&lt;li&gt;Essentially a small neural net in silicon.&lt;&#x2F;li&gt;
+&lt;li&gt;Accuracy &amp;gt;95--99%.&lt;&#x2F;li&gt;
+&lt;li&gt;Hardware cost: tens of megabits.&lt;&#x2F;li&gt;
+&lt;li&gt;Modern branch predictors are like &quot;tiny supercomputers&quot; inside
+CPUs.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Speculative Execution with Invariance Tracking (modern
+research):&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Even if mispredicted, CPU can sometimes reuse invariant
+computations.&lt;&#x2F;li&gt;
+&lt;li&gt;Analogy: misunderstanding a paragraph but still being able to
+use facts in the next one.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;2-ssa-ssi-evolution&quot;&gt;2. SSA → SSI Evolution&lt;a class=&quot;zola-anchor&quot; href=&quot;#2-ssa-ssi-evolution&quot; aria-label=&quot;Anchor link for: 2-ssa-ssi-evolution&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;In compiler theory, Static Single Assignment (SSA) form also evolved to
+handle path-sensitive information, which parallels branch prediction
+evolution.&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;SSA (1980s):&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Each variable is assigned exactly once.&lt;&#x2F;li&gt;
+&lt;li&gt;φ-nodes merge values from different control-flow paths.&lt;&#x2F;li&gt;
+&lt;li&gt;Enables easier dataflow analysis.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;SSI (Static Single Information, 1990s):&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Extends SSA with σ-nodes (propagation of &lt;em&gt;predicates&lt;&#x2F;em&gt; along
+branches).&lt;&#x2F;li&gt;
+&lt;li&gt;Adds history&#x2F;context: the value of a variable may depend on the
+&lt;em&gt;branch condition&lt;&#x2F;em&gt; taken.&lt;&#x2F;li&gt;
+&lt;li&gt;This is similar to branch predictors adding &lt;em&gt;path history&lt;&#x2F;em&gt; for
+accuracy.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;3-parallels-between-branch-prediction-and-ssa-ssi&quot;&gt;3. Parallels Between Branch Prediction and SSA → SSI&lt;a class=&quot;zola-anchor&quot; href=&quot;#3-parallels-between-branch-prediction-and-ssa-ssi&quot; aria-label=&quot;Anchor link for: 3-parallels-between-branch-prediction-and-ssa-ssi&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Base Case (Last Outcome vs SSA):&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Last-outcome prediction is like plain SSA: keeps track of values
+(or outcomes) but without context.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Adding History (Counters vs σ-nodes):&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Multi-bit counters and global history parallel the move from SSA
+to SSI, where additional information (context) is preserved.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Learning-based (Neural Predictors vs Path-sensitive IR):&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Just as neural predictors recognize deeper patterns, SSI and
+advanced compiler IRs capture richer flow-sensitive invariants.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;4-timeline-summary&quot;&gt;4. Timeline Summary&lt;a class=&quot;zola-anchor&quot; href=&quot;#4-timeline-summary&quot; aria-label=&quot;Anchor link for: 4-timeline-summary&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;1980s:&lt;&#x2F;strong&gt; Last-outcome prediction, SSA formalization.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;1990s:&lt;&#x2F;strong&gt; Two-bit counters, global history predictors, SSI
+introduction.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;2000s--2020s:&lt;&#x2F;strong&gt; Perceptron predictors, neural nets; research into
+predicate-sensitive IR and advanced SSA variants.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;5-references-papers&quot;&gt;5. References &#x2F; Papers&lt;a class=&quot;zola-anchor&quot; href=&quot;#5-references-papers&quot; aria-label=&quot;Anchor link for: 5-references-papers&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;J.E. Smith, &quot;A study of branch prediction strategies,&quot; ISCA 1981.\&lt;&#x2F;li&gt;
+&lt;li&gt;Yeh &amp;amp; Patt, &quot;Two-level adaptive branch prediction,&quot; MICRO 1991.\&lt;&#x2F;li&gt;
+&lt;li&gt;Jiménez &amp;amp; Lin, &quot;Dynamic Branch Prediction with Perceptrons,&quot; HPCA
+2001.\&lt;&#x2F;li&gt;
+&lt;li&gt;Cytron et al., &quot;Efficiently Computing Static Single Assignment
+Form,&quot; TOPLAS 1991.\&lt;&#x2F;li&gt;
+&lt;li&gt;Ananian, &quot;The Static Single Information Form,&quot; MIT CSAIL TR-827,
+1999.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+</content>
+	</entry>
+	<entry xml:lang="en">
+		<title>MLIR Generic DAG Rewriter</title>
+		<published>2025-10-02T00:00:00+00:00</published>
+		<updated>2025-10-02T00:00:00+00:00</updated>
+		<link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/mlir-generic-dag-rewriter/"/>
+		<id>https://josephbak.github.io/notes/mlir-generic-dag-rewriter/</id>
+    
+		<content type="html" xml:base="https://josephbak.github.io/notes/mlir-generic-dag-rewriter/">&lt;!-- Notes on MLIR (Multi-Level Intermediate Representation) Generic DAG (Directed Acyclic Graph) Rewriter --&gt;
+&lt;p&gt;A compact, publish‑ready summary of what I learned from &lt;strong&gt;https:&#x2F;&#x2F;mlir.llvm.org&#x2F;docs&#x2F;Rationale&#x2F;RationaleGenericDAGRewriter&#x2F;&lt;&#x2F;strong&gt; and the discussion.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;tl-dr&quot;&gt;TL;DR&lt;a class=&quot;zola-anchor&quot; href=&quot;#tl-dr&quot; aria-label=&quot;Anchor link for: tl-dr&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;MLIR (Multi-Level Intermediate Representation) needs a &lt;strong&gt;general DAG (Directed Acyclic Graph)-to-DAG (Directed Acyclic Graph)&lt;&#x2F;strong&gt; rewrite engine to handle many optimizations and lowerings across abstraction levels.&lt;&#x2F;li&gt;
+&lt;li&gt;This is different from &lt;strong&gt;CSE (Common Subexpression Elimination)&lt;&#x2F;strong&gt;: DAG (Directed Acyclic Graph) rewriting &lt;strong&gt;changes&lt;&#x2F;strong&gt; the shape (e.g., fuse &lt;code&gt;mul+add&lt;&#x2F;code&gt; → &lt;strong&gt;FMA (Fused Multiply Add)&lt;&#x2F;strong&gt;); CSE (Common Subexpression Elimination) only &lt;strong&gt;deduplicates&lt;&#x2F;strong&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;The infrastructure aims for &lt;strong&gt;declarative, reusable patterns&lt;&#x2F;strong&gt;, robust legality checks, good diagnostics, and flexible algorithms because global DAG tiling is &lt;strong&gt;NP (Nondeterministic Polynomial time)-complete&lt;&#x2F;strong&gt;.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;core-idea-match-one-dag-directed-acyclic-graph-replace-with-another&quot;&gt;Core idea: “Match one DAG (Directed Acyclic Graph), replace with another”&lt;a class=&quot;zola-anchor&quot; href=&quot;#core-idea-match-one-dag-directed-acyclic-graph-replace-with-another&quot; aria-label=&quot;Anchor link for: core-idea-match-one-dag-directed-acyclic-graph-replace-with-another&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;IR (Intermediate Representation) is a graph: nodes = &lt;strong&gt;operations&lt;&#x2F;strong&gt;, edges = &lt;strong&gt;SSA (Static Single Assignment) values&lt;&#x2F;strong&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;Pattern rewriter finds a &lt;strong&gt;subgraph&lt;&#x2F;strong&gt; (e.g., &lt;code&gt;add&lt;&#x2F;code&gt; feeding &lt;code&gt;mul&lt;&#x2F;code&gt;) and replaces it with an &lt;strong&gt;equivalent&lt;&#x2F;strong&gt; but better subgraph (e.g., a single &lt;strong&gt;FMA (Fused Multiply Add)&lt;&#x2F;strong&gt;).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;&lt;strong&gt;ASCII&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Before:            After:
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; a   b   c          a   b   c
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  \ &#x2F;               \ | &#x2F;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  add                fma         # (a + b) * c
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   |                               
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   v
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  mul
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;canonicalization-vs-constant-folding-vs-clients&quot;&gt;Canonicalization vs Constant Folding vs Clients&lt;a class=&quot;zola-anchor&quot; href=&quot;#canonicalization-vs-constant-folding-vs-clients&quot; aria-label=&quot;Anchor link for: canonicalization-vs-constant-folding-vs-clients&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Canonicalization&lt;&#x2F;strong&gt;: normalize equivalent forms (e.g., &lt;code&gt;x+0 → x&lt;&#x2F;code&gt;, reorder commutative ops) so later passes see a &lt;strong&gt;standard&lt;&#x2F;strong&gt; shape.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Constant folding&lt;&#x2F;strong&gt;: if operands are constants, compute the result constant. In MLIR (Multi-Level Intermediate Representation), &lt;code&gt;fold()&lt;&#x2F;code&gt; &lt;strong&gt;returns&lt;&#x2F;strong&gt; constants; &lt;strong&gt;clients&lt;&#x2F;strong&gt; (passes like canonicalizer) update IR (Intermediate Representation). This avoids iterator invalidation.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Clients&lt;&#x2F;strong&gt; = the users of these APIs (Application Programming Interfaces): canonicalization, simplifiers, etc.—they call &lt;code&gt;op.fold()&lt;&#x2F;code&gt; and perform the IR (Intermediate Representation) edits safely.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;ast-abstract-syntax-tree-vs-dag-directed-acyclic-graph&quot;&gt;AST (Abstract Syntax Tree) vs DAG (Directed Acyclic Graph)&lt;a class=&quot;zola-anchor&quot; href=&quot;#ast-abstract-syntax-tree-vs-dag-directed-acyclic-graph&quot; aria-label=&quot;Anchor link for: ast-abstract-syntax-tree-vs-dag-directed-acyclic-graph&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;AST (Abstract Syntax Tree)&lt;&#x2F;strong&gt; is a &lt;strong&gt;tree&lt;&#x2F;strong&gt; → no natural sharing; &lt;code&gt;(x+y)&lt;&#x2F;code&gt; duplicated in &lt;code&gt;(x+y)*(x+y)&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;DAG (Directed Acyclic Graph)&lt;&#x2F;strong&gt; permits sharing; one node for &lt;code&gt;(x+y)&lt;&#x2F;code&gt; with two uses.&lt;&#x2F;li&gt;
+&lt;li&gt;DAG (Directed Acyclic Graph) matching is more powerful than tree matching, but must guard against &lt;strong&gt;duplicating&lt;&#x2F;strong&gt; shared work.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;how-dag-directed-acyclic-graph-sharing-happens-construction&quot;&gt;How DAG (Directed Acyclic Graph) sharing happens (construction)&lt;a class=&quot;zola-anchor&quot; href=&quot;#how-dag-directed-acyclic-graph-sharing-happens-construction&quot; aria-label=&quot;Anchor link for: how-dag-directed-acyclic-graph-sharing-happens-construction&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Hash‑consing &#x2F; value numbering&lt;&#x2F;strong&gt;: map &lt;code&gt;(op, operands, attributes, types)&lt;&#x2F;code&gt; → existing node; reuse it instead of re‑creating.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;SSA (Static Single Assignment)&lt;&#x2F;strong&gt; naturally encodes sharing: one definition, many uses.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;cse-common-subexpression-elimination-vs-peephole-combiners&quot;&gt;CSE (Common Subexpression Elimination) vs Peephole “Combiners”&lt;a class=&quot;zola-anchor&quot; href=&quot;#cse-common-subexpression-elimination-vs-peephole-combiners&quot; aria-label=&quot;Anchor link for: cse-common-subexpression-elimination-vs-peephole-combiners&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;CSE (Common Subexpression Elimination)&lt;&#x2F;strong&gt;: remove &lt;strong&gt;duplicate&lt;&#x2F;strong&gt; equivalent ops when the earlier one &lt;strong&gt;dominates&lt;&#x2F;strong&gt; the later.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Combiners&lt;&#x2F;strong&gt; (peepholes): local &lt;strong&gt;algebraic rewrites&lt;&#x2F;strong&gt; within a small window (e.g., fuse, fold, strength‑reduce). Order and local cost matter.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;&lt;strong&gt;Strength reduction examples&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;x*2 → x&amp;lt;&amp;lt;1&lt;&#x2F;code&gt; (bit‑shift), &lt;code&gt;x%2^k → x&amp;amp;(2^k−1)&lt;&#x2F;code&gt; for &lt;strong&gt;unsigned&lt;&#x2F;strong&gt; or non‑negative &lt;code&gt;x&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;For non‑power‑of‑two divisors, use “magic” multiply+shift sequences, not masking.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;dominance-hoisting-licm-loop-invariant-code-motion-gvn-global-value-numbering-cfg-control-flow-graph&quot;&gt;Dominance, Hoisting, LICM (Loop‑Invariant Code Motion), GVN (Global Value Numbering), CFG (Control‑Flow Graph)&lt;a class=&quot;zola-anchor&quot; href=&quot;#dominance-hoisting-licm-loop-invariant-code-motion-gvn-global-value-numbering-cfg-control-flow-graph&quot; aria-label=&quot;Anchor link for: dominance-hoisting-licm-loop-invariant-code-motion-gvn-global-value-numbering-cfg-control-flow-graph&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Dominance&lt;&#x2F;strong&gt;: A dominates B if A is executed &lt;strong&gt;on every path&lt;&#x2F;strong&gt; to B.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Hoisting&lt;&#x2F;strong&gt;: move an op to a &lt;strong&gt;dominating&lt;&#x2F;strong&gt; block so it runs once and is reused. Trade‑off: longer live ranges → higher &lt;strong&gt;register pressure&lt;&#x2F;strong&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;LICM (Loop‑Invariant Code Motion)&lt;&#x2F;strong&gt;: move loop‑invariant work to the loop preheader (or sink it) when safe&#x2F;profitable.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;GVN (Global Value Numbering)&lt;&#x2F;strong&gt;: global equivalence + redundancy elimination across the &lt;strong&gt;CFG (Control‑Flow Graph)&lt;&#x2F;strong&gt; (MLIR (Multi-Level Intermediate Representation) core relies more on CSE (Common Subexpression Elimination), canonicalization, SCCP (Sparse Conditional Constant Propagation), etc.; classic GVN (Global Value Numbering) is on the LLVM (Low Level Virtual Machine) side).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;CFG (Control‑Flow Graph)&lt;&#x2F;strong&gt;: nodes = basic blocks; edges = possible control transfer.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;mlir-multi-level-intermediate-representation-rewrite-infrastructure&quot;&gt;MLIR (Multi-Level Intermediate Representation) rewrite infrastructure&lt;a class=&quot;zola-anchor&quot; href=&quot;#mlir-multi-level-intermediate-representation-rewrite-infrastructure&quot; aria-label=&quot;Anchor link for: mlir-multi-level-intermediate-representation-rewrite-infrastructure&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;RewritePattern + PatternRewriter&lt;&#x2F;strong&gt; with greedy drivers (&lt;code&gt;applyPatternsAndFoldGreedily&lt;&#x2F;code&gt;).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;DRR (Declarative Rewrite Rules)&lt;&#x2F;strong&gt; (TableGen) and &lt;strong&gt;PDL&#x2F;PDLL (Pattern Description Language &#x2F; Pattern Description Language frontend)&lt;&#x2F;strong&gt; for declarative pattern authoring.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Canonicalizer&lt;&#x2F;strong&gt; + op‑level &lt;code&gt;fold()&lt;&#x2F;code&gt; unify local cleanups.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Dialect Conversion&lt;&#x2F;strong&gt;: legality, 1→N&#x2F;N→M rewrites, type conversion; not just peepholes.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Transform dialect&lt;&#x2F;strong&gt;: orchestrate how&#x2F;where to apply transformations using IR (Intermediate Representation) itself.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;llvm-low-level-virtual-machine-selectiondag-selection-directed-acyclic-graph-instruction-selection&quot;&gt;LLVM (Low Level Virtual Machine) SelectionDAG (Selection Directed Acyclic Graph) instruction selection&lt;a class=&quot;zola-anchor&quot; href=&quot;#llvm-low-level-virtual-machine-selectiondag-selection-directed-acyclic-graph-instruction-selection&quot; aria-label=&quot;Anchor link for: llvm-low-level-virtual-machine-selectiondag-selection-directed-acyclic-graph-instruction-selection&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Declarative &lt;code&gt;Pat&amp;lt;&amp;gt;&lt;&#x2F;code&gt; patterns (TableGen) match target‑independent DAGs (Directed Acyclic Graphs) and rewrite to machine instructions.&lt;&#x2F;li&gt;
+&lt;li&gt;Pros: declarative, identity‑aware, compact state machine, type‑checked, extensible with custom C++.&lt;&#x2F;li&gt;
+&lt;li&gt;Cons: narrowly scoped to &lt;strong&gt;instruction selection&lt;&#x2F;strong&gt;, requires rebuild to extend, limited diagnostics, SelectionDAG (Selection Directed Acyclic Graph) constraints (e.g., multi‑result pain), accumulated tech debt.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;equality-saturation-e-graphs-why-it-matters&quot;&gt;Equality saturation (e‑graphs) — why it matters&lt;a class=&quot;zola-anchor&quot; href=&quot;#equality-saturation-e-graphs-why-it-matters&quot; aria-label=&quot;Anchor link for: equality-saturation-e-graphs-why-it-matters&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Solves the “optimizing too early” problem: keep &lt;strong&gt;all&lt;&#x2F;strong&gt; equivalent forms; pick best later via a cost model.&lt;&#x2F;li&gt;
+&lt;li&gt;Trade‑off: search‑space growth; prototypes exist around MLIR (Multi-Level Intermediate Representation), but not core yet.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;goals-of-mlir-multi-level-intermediate-representation-generic-dag-directed-acyclic-graph-rewriter&quot;&gt;Goals of MLIR (Multi-Level Intermediate Representation) generic DAG (Directed Acyclic Graph) rewriter&lt;a class=&quot;zola-anchor&quot; href=&quot;#goals-of-mlir-multi-level-intermediate-representation-generic-dag-directed-acyclic-graph-rewriter&quot; aria-label=&quot;Anchor link for: goals-of-mlir-multi-level-intermediate-representation-generic-dag-directed-acyclic-graph-rewriter&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Support &lt;strong&gt;1→N&lt;&#x2F;strong&gt;, &lt;strong&gt;M→1&lt;&#x2F;strong&gt;, &lt;strong&gt;M→N&lt;&#x2F;strong&gt; with &lt;strong&gt;benefits&lt;&#x2F;strong&gt;; infra picks best local match.&lt;&#x2F;li&gt;
+&lt;li&gt;Separate (1) best pattern at a root, (2) whole‑graph rewrite strategy, (3) pattern definitions.&lt;&#x2F;li&gt;
+&lt;li&gt;Enable iterative rewrites with different client trade‑offs.&lt;&#x2F;li&gt;
+&lt;li&gt;Make patterns easy, safe, and resilient: simple APIs (Application Programming Interfaces), clean legality separation, strong provenance and diagnostics.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;non-goals-limits&quot;&gt;Non‑goals &#x2F; limits&lt;a class=&quot;zola-anchor&quot; href=&quot;#non-goals-limits&quot; aria-label=&quot;Anchor link for: non-goals-limits&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Not for global data‑flow problems (e.g., CSE (Common Subexpression Elimination), SCCP (Sparse Conditional Constant Propagation)).&lt;&#x2F;li&gt;
+&lt;li&gt;Limited to DAGs (Directed Acyclic Graphs); won’t see through cycles &#x2F; across block arguments.&lt;&#x2F;li&gt;
+&lt;li&gt;Pattern “benefits” are magic numbers; each application interprets them.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;minimal-runnable-mlir-multi-level-intermediate-representation-snippets&quot;&gt;Minimal, runnable MLIR (Multi-Level Intermediate Representation) snippets&lt;a class=&quot;zola-anchor&quot; href=&quot;#minimal-runnable-mlir-multi-level-intermediate-representation-snippets&quot; aria-label=&quot;Anchor link for: minimal-runnable-mlir-multi-level-intermediate-representation-snippets&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;&lt;strong&gt;A) CSE (Common Subexpression Elimination)&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;mlir&quot; class=&quot;language-mlir z-code&quot;&gt;&lt;code class=&quot;language-mlir&quot; data-lang=&quot;mlir&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;module {
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  func.func @cse(%a: i32, %b: i32) -&amp;gt; i32 {
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    %0 = arith.addi %a, %b : i32 loc(&amp;quot;A&amp;quot;)
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    %1 = arith.addi %a, %b : i32 loc(&amp;quot;B&amp;quot;)
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    %2 = arith.muli %0, %1 : i32
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    return %2 : i32
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  }
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;}
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Run: &lt;code&gt;mlir-opt input.mlir -cse&lt;&#x2F;code&gt;
+Result: &lt;code&gt;%1&lt;&#x2F;code&gt; removed; &lt;code&gt;%2 = arith.muli %0, %0&lt;&#x2F;code&gt;.&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;B) LICM (Loop‑Invariant Code Motion)&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;mlir&quot; class=&quot;language-mlir z-code&quot;&gt;&lt;code class=&quot;language-mlir&quot; data-lang=&quot;mlir&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;module {
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  func.func @licm(%A: i32, %n: index) -&amp;gt; i32 {
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    %c0  = arith.constant 0 : index
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    %c1  = arith.constant 1 : index
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    %z0  = arith.constant 0 : i32
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    %res = scf.for %i = %c0 to %n step %c1 iter_args(%acc = %z0) -&amp;gt; (i32) {
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;      %two   = arith.constant 2 : i32
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;      %scale = arith.muli %A, %two : i32
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;      %acc1  = arith.addi %acc, %scale : i32
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;      scf.yield %acc1 : i32
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    }
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    return %res : i32
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  }
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;}
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Run: &lt;code&gt;mlir-opt input.mlir -loop-invariant-code-motion&lt;&#x2F;code&gt;
+Effect: &lt;code&gt;%two&lt;&#x2F;code&gt; and &lt;code&gt;%scale&lt;&#x2F;code&gt; are hoisted to the preheader; loop body shrinks.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;practical-takeaways&quot;&gt;Practical takeaways&lt;a class=&quot;zola-anchor&quot; href=&quot;#practical-takeaways&quot; aria-label=&quot;Anchor link for: practical-takeaways&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Use the &lt;strong&gt;canonicalizer&lt;&#x2F;strong&gt; + &lt;strong&gt;CSE (Common Subexpression Elimination)&lt;&#x2F;strong&gt; early to normalize IR (Intermediate Representation); then apply richer &lt;strong&gt;RewritePattern&lt;&#x2F;strong&gt;s.&lt;&#x2F;li&gt;
+&lt;li&gt;Prefer &lt;strong&gt;declarative patterns&lt;&#x2F;strong&gt; (DRR (Declarative Rewrite Rules), PDL&#x2F;PDLL (Pattern Description Language &#x2F; Pattern Description Language frontend)) over ad‑hoc C++ when possible.&lt;&#x2F;li&gt;
+&lt;li&gt;Be mindful of &lt;strong&gt;dominance&lt;&#x2F;strong&gt;, &lt;strong&gt;legality&lt;&#x2F;strong&gt;, and &lt;strong&gt;register pressure&lt;&#x2F;strong&gt; when hoisting&#x2F;fusing.&lt;&#x2F;li&gt;
+&lt;li&gt;Consider &lt;strong&gt;equality saturation&lt;&#x2F;strong&gt; for domains where early canonicalization can kill opportunities.&lt;&#x2F;li&gt;
+&lt;li&gt;Remember limits: this infra isn’t a substitute for &lt;strong&gt;CFG (Control‑Flow Graph)&lt;&#x2F;strong&gt;-wide analyses like &lt;strong&gt;GVN (Global Value Numbering)&lt;&#x2F;strong&gt; or &lt;strong&gt;SCCP (Sparse Conditional Constant Propagation)&lt;&#x2F;strong&gt;.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;p&gt;&lt;em&gt;Prepared as a quick post‑able note; feel free to copy&#x2F;paste to your site as is.&lt;&#x2F;em&gt;&lt;&#x2F;p&gt;
+</content>
+	</entry>
+	<entry xml:lang="en">
+		<title>Φ-nodes, SSI, and MLIR Block Arguments</title>
+		<published>2025-10-02T00:00:00+00:00</published>
+		<updated>2025-10-02T00:00:00+00:00</updated>
+		<link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/phi-nodes-ssi-mlir/"/>
+		<id>https://josephbak.github.io/notes/phi-nodes-ssi-mlir/</id>
+    
+		<content type="html" xml:base="https://josephbak.github.io/notes/phi-nodes-ssi-mlir/">&lt;!-- # Φ-nodes, SSI, and MLIR Block Arguments --&gt;
+&lt;h2 id=&quot;1-ph-nodes-ssa-basics&quot;&gt;1. Φ-nodes (SSA basics)&lt;a class=&quot;zola-anchor&quot; href=&quot;#1-ph-nodes-ssa-basics&quot; aria-label=&quot;Anchor link for: 1-ph-nodes-ssa-basics&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;SSA (Static Single Assignment):&lt;&#x2F;strong&gt; each variable assigned once.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Problem:&lt;&#x2F;strong&gt; at control-flow merges, multiple reaching definitions exist.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Solution:&lt;&#x2F;strong&gt; φ-node merges values depending on predecessor.&lt;br &#x2F;&gt;
+Example in LLVM IR:&lt;pre data-lang=&quot;llvm&quot; class=&quot;language-llvm z-code&quot;&gt;&lt;code class=&quot;language-llvm&quot; data-lang=&quot;llvm&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;merge:
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  %x = phi i32 [1, %then], [2, %else]
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Limitation: φ handles &lt;em&gt;merges only&lt;&#x2F;em&gt;, not branch-specific refinements.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;2-mlir-block-arguments&quot;&gt;2. MLIR Block Arguments&lt;a class=&quot;zola-anchor&quot; href=&quot;#2-mlir-block-arguments&quot; aria-label=&quot;Anchor link for: 2-mlir-block-arguments&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;MLIR treats &lt;strong&gt;basic blocks like functions&lt;&#x2F;strong&gt;:
+&lt;ul&gt;
+&lt;li&gt;Blocks can declare arguments.&lt;&#x2F;li&gt;
+&lt;li&gt;Terminators (br, cond_br) pass values to successors.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Block arguments replace φ-nodes&lt;&#x2F;strong&gt;.&lt;br &#x2F;&gt;
+Example:&lt;pre data-lang=&quot;mlir&quot; class=&quot;language-mlir z-code&quot;&gt;&lt;code class=&quot;language-mlir&quot; data-lang=&quot;mlir&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;^merge(%x: i32):
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  %y = addi %x, %c3
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Advantages (from MLIR Rationale):
+&lt;ol&gt;
+&lt;li&gt;No “all φ at block top” special case.&lt;&#x2F;li&gt;
+&lt;li&gt;Function args = block args (unified model).&lt;&#x2F;li&gt;
+&lt;li&gt;No “atomic φ-bundle” problems (lost-copy issues).&lt;&#x2F;li&gt;
+&lt;li&gt;Scales better for many predecessors.&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;3-ssi-static-single-information&quot;&gt;3. SSI (Static Single Information)&lt;a class=&quot;zola-anchor&quot; href=&quot;#3-ssi-static-single-information&quot; aria-label=&quot;Anchor link for: 3-ssi-static-single-information&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Extension of SSA: adds &lt;strong&gt;σ-nodes at splits&lt;&#x2F;strong&gt; (dual of φ at joins).&lt;&#x2F;li&gt;
+&lt;li&gt;Purpose: propagate &lt;em&gt;branch-sensitive facts&lt;&#x2F;em&gt;.
+&lt;ul&gt;
+&lt;li&gt;Example: &lt;code&gt;if (x == 0)&lt;&#x2F;code&gt; ⇒ σ splits into &lt;code&gt;x0&lt;&#x2F;code&gt; (then) and &lt;code&gt;x_not0&lt;&#x2F;code&gt; (else).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Placement:&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;φ-nodes placed using dominance frontier DF(·).&lt;&#x2F;li&gt;
+&lt;li&gt;σ-nodes placed using reverse dominance frontier RDF(·).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Benefits: precise predicated and backward dataflow analyses.&lt;&#x2F;li&gt;
+&lt;li&gt;Sources: Ananian (1999&#x2F;2001), Singer (2002).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;4-why-mlir-doesn-t-need-ph&quot;&gt;4. Why MLIR Doesn’t Need φ&lt;a class=&quot;zola-anchor&quot; href=&quot;#4-why-mlir-doesn-t-need-ph&quot; aria-label=&quot;Anchor link for: 4-why-mlir-doesn-t-need-ph&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Block arguments are a strict superset of φ-nodes&lt;&#x2F;strong&gt; (Chris Lattner).&lt;&#x2F;li&gt;
+&lt;li&gt;Block args handle both:
+&lt;ul&gt;
+&lt;li&gt;φ-like merges at joins.&lt;&#x2F;li&gt;
+&lt;li&gt;σ-like refinements at branches (by passing renamed arguments).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;This makes MLIR’s design &lt;strong&gt;functional SSA&lt;&#x2F;strong&gt;: branches apply values to blocks like function calls.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;5-counterarguments-responses&quot;&gt;5. Counterarguments &amp;amp; Responses&lt;a class=&quot;zola-anchor&quot; href=&quot;#5-counterarguments-responses&quot; aria-label=&quot;Anchor link for: 5-counterarguments-responses&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Criticism (HN):&lt;&#x2F;strong&gt; “Block args are just syntax for φ.”&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Response:&lt;&#x2F;strong&gt; With σ-like behavior (branch-local refinements), block args are more general than φ.
+&lt;ul&gt;
+&lt;li&gt;Example: conditions like &lt;code&gt;x==0&lt;&#x2F;code&gt; vs &lt;code&gt;x!=0&lt;&#x2F;code&gt; are explicit in MLIR args.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;6-performance-cost-considerations&quot;&gt;6. Performance &#x2F; Cost Considerations&lt;a class=&quot;zola-anchor&quot; href=&quot;#6-performance-cost-considerations&quot; aria-label=&quot;Anchor link for: 6-performance-cost-considerations&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;SSA out-of-form:&lt;&#x2F;strong&gt; eliminating φ requires &lt;strong&gt;parallel copy resolution&lt;&#x2F;strong&gt; (lost-copy, swap problems).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;MLIR advantage:&lt;&#x2F;strong&gt; explicit argument passing avoids “atomic φ-bundles.”&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;SSI&#x2F;Singer:&lt;&#x2F;strong&gt; more nodes, but pruned forms are efficient; optimistic algorithms exist.&lt;&#x2F;li&gt;
+&lt;li&gt;Lowering MLIR → LLVM IR: block args are reconstructed as φ-nodes for backends.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;7-comparisons-to-other-ir-designs&quot;&gt;7. Comparisons to Other IR Designs&lt;a class=&quot;zola-anchor&quot; href=&quot;#7-comparisons-to-other-ir-designs&quot; aria-label=&quot;Anchor link for: 7-comparisons-to-other-ir-designs&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;CPS (Continuation-Passing Style):&lt;&#x2F;strong&gt; blocks-as-functions, more explicit than MLIR.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Region-based IRs (Sea-of-Nodes):&lt;&#x2F;strong&gt; merges are implicit via dataflow edges.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Predicate&#x2F;Gated SSA (GSA, PSSA):&lt;&#x2F;strong&gt; encode conditions explicitly; similar motivation to SSI.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;MLIR position:&lt;&#x2F;strong&gt; middle ground — explicit, compositional, generalizes φ and σ.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;8-what-to-add-for-completeness&quot;&gt;8. What to Add for Completeness&lt;a class=&quot;zola-anchor&quot; href=&quot;#8-what-to-add-for-completeness&quot; aria-label=&quot;Anchor link for: 8-what-to-add-for-completeness&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;CGO slides &#x2F; DevMtg talks (Lattner):&lt;&#x2F;strong&gt; design tradeoffs and heuristics.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;MLIR Rationale &amp;amp; LangRef:&lt;&#x2F;strong&gt; official explanation + examples.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Formal definitions:&lt;&#x2F;strong&gt; φ placement (DF), σ placement (RDF).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Counterexamples:&lt;&#x2F;strong&gt; branch-specific renamings that φ cannot encode.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Implementation cost:&lt;&#x2F;strong&gt; Singer’s node counts, SSA destruction papers (Boissinot 2009, Pereira 2009).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Lowering reality:&lt;&#x2F;strong&gt; LLVM and SPIR-V still need φ; MLIR reconstructs them.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Other IRs:&lt;&#x2F;strong&gt; compare to CPS, region&#x2F;dataflow IRs.&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;9-reading-list&quot;&gt;9. Reading List&lt;a class=&quot;zola-anchor&quot; href=&quot;#9-reading-list&quot; aria-label=&quot;Anchor link for: 9-reading-list&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;SSA core:&lt;&#x2F;strong&gt; Cytron et al. (1991) &lt;em&gt;Efficiently Computing SSA&lt;&#x2F;em&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;SSI:&lt;&#x2F;strong&gt; Ananian (1999&#x2F;2001), Singer (2002) &lt;em&gt;Efficiently Computing SSI&lt;&#x2F;em&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Out-of-SSA:&lt;&#x2F;strong&gt; Boissinot et al. (2009), Pereira &amp;amp; Palsberg (2009).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;MLIR docs:&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;LangRef → Blocks&lt;&#x2F;li&gt;
+&lt;li&gt;Rationale → Block Arguments vs PHI nodes&lt;&#x2F;li&gt;
+&lt;li&gt;LLVM dialect → PHI Nodes and Block Args&lt;&#x2F;li&gt;
+&lt;li&gt;SPIR-V dialect → Block args for Phi&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Design context:&lt;&#x2F;strong&gt; Nikita Popov, &lt;em&gt;Design Issues in LLVM IR&lt;&#x2F;em&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Talks:&lt;&#x2F;strong&gt; Lattner&#x2F;Shpeisman CGO &amp;amp; LLVM Dev Mtg slides.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;p&gt;✅ &lt;strong&gt;Key Takeaway:&lt;&#x2F;strong&gt;&lt;br &#x2F;&gt;
+MLIR’s block arguments &lt;strong&gt;subsume φ-nodes and σ-nodes&lt;&#x2F;strong&gt; in a clean, function-like model. They make SSA transformations easier, interop with existing IRs via lowering, and position MLIR as a generalization of SSA forms like SSI, GSA, PSSA.&lt;&#x2F;p&gt;
+</content>
+	</entry>
+	<entry xml:lang="en">
+		<title>From Use–Def to Preimage: Fusing Structured Ops in MLIR</title>
+		<published>2025-10-01T00:00:00+00:00</published>
+		<updated>2025-10-01T00:00:00+00:00</updated>
+		<link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/mlir-use-def-indexing-maps-preimage-inline-katex/"/>
+		<id>https://josephbak.github.io/notes/mlir-use-def-indexing-maps-preimage-inline-katex/</id>
+    
+		<content type="html" xml:base="https://josephbak.github.io/notes/mlir-use-def-indexing-maps-preimage-inline-katex/">&lt;!-- KaTeX includes (inline; requires markdown.render_unsafe = true) --&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;katex.min.css&quot;&gt;
+&lt;script defer src=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;katex.min.js&quot;&gt;&lt;&#x2F;script&gt;
+&lt;script defer src=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;contrib&#x2F;auto-render.min.js&quot;&gt;&lt;&#x2F;script&gt;
+&lt;script&gt;
+ document.addEventListener(&quot;DOMContentLoaded&quot;, function() {
+ renderMathInElement(document.body, {
+ delimiters: [
+ {left: &quot;$$&quot;, right: &quot;$$&quot;, display: true},
+ {left: &quot;\\[&quot;, right: &quot;\\]&quot;, display: true},
+ {left: &quot;$&quot;, right: &quot;$&quot;, display: false},
+ {left: &quot;\\(&quot;, right: &quot;\\)&quot;, display: false}
+ ],
+ throwOnError: false
+ });
+ });
+&lt;&#x2F;script&gt;
+&lt;p&gt;&lt;em&gt;A short, practical note for future-me about the core ideas behind producer&#x2F;consumer fusion in MLIR’s structured world.&lt;&#x2F;em&gt;&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;tl-dr&quot;&gt;TL;DR&lt;a class=&quot;zola-anchor&quot; href=&quot;#tl-dr&quot; aria-label=&quot;Anchor link for: tl-dr&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Use-def:&lt;&#x2F;strong&gt; follow SSA edges from a consumer tile back to the op that defines its input.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Indexing map:&lt;&#x2F;strong&gt; for each operand, an affine map $f:\mathbb{Z}^n\to\mathbb{Z}^r$ from loop indices to subscripts.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Invert vs preimage:&lt;&#x2F;strong&gt; only invertible if $f$ is unimodular&#x2F;permutation; in general compute the &lt;strong&gt;preimage&lt;&#x2F;strong&gt; $ f^{-1}(S) = \lbrace \mathbf{i}\mid f(\mathbf{i})\in S \rbrace $.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Fusion across mismatched spaces:&lt;&#x2F;strong&gt; pull back the consumer tile through the producer’s output map to compute &lt;strong&gt;exactly&lt;&#x2F;strong&gt; the producer iterations you need &lt;em&gt;in place&lt;&#x2F;em&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Rematerialization:&lt;&#x2F;strong&gt; deliberate recomputation of cheap producers per tile to kill memory traffic.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;1-use-def-in-one-picture&quot;&gt;1) Use-Def in one picture&lt;a class=&quot;zola-anchor&quot; href=&quot;#1-use-def-in-one-picture&quot; aria-label=&quot;Anchor link for: 1-use-def-in-one-picture&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%Y = linalg.matmul ... &#x2F;&#x2F; def(%Y) = matmul
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%Z = linalg.generic ins(%Y) ... &#x2F;&#x2F; %Y is used here → consumer
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;matmul ──defines──▶ generic &#x2F;&#x2F; def→use
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;generic ──uses──────▶ matmul &#x2F;&#x2F; use→def (reverse walk for fusion)
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;&lt;strong&gt;Quick defs (SSA&#x2F;MLIR):&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;SSA value&lt;&#x2F;strong&gt;: defined once, used many times.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;def(v)&lt;&#x2F;strong&gt;: the op (or block arg) that defines &lt;code&gt;v&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;uses(v)&lt;&#x2F;strong&gt;: the ops that consume &lt;code&gt;v&lt;&#x2F;code&gt; as an operand.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;def→use&lt;&#x2F;strong&gt;: from a value’s def to all its consumers (“who reads what I produce?”).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;use→def&lt;&#x2F;strong&gt;: from a consumer operand back to the op that defined it (what we walk for fusion).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;producer&#x2F;consumer&lt;&#x2F;strong&gt;: if &lt;code&gt;P&lt;&#x2F;code&gt; defines &lt;code&gt;%x&lt;&#x2F;code&gt; and &lt;code&gt;C&lt;&#x2F;code&gt; takes &lt;code&gt;%x&lt;&#x2F;code&gt;, then &lt;code&gt;P&lt;&#x2F;code&gt; is &lt;code&gt;%x&lt;&#x2F;code&gt;’s &lt;strong&gt;producer&lt;&#x2F;strong&gt;, &lt;code&gt;C&lt;&#x2F;code&gt; its &lt;strong&gt;consumer&lt;&#x2F;strong&gt;.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;We start from a &lt;strong&gt;consumer tile&lt;&#x2F;strong&gt; (a 2‑D slice of &lt;code&gt;%Z&lt;&#x2F;code&gt;) and walk &lt;strong&gt;use→def&lt;&#x2F;strong&gt; to find the &lt;strong&gt;producer&lt;&#x2F;strong&gt; (&lt;code&gt;%Y&lt;&#x2F;code&gt; from matmul) to potentially fuse.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;2-indexing-maps-formal-and-concrete&quot;&gt;2) Indexing maps (formal and concrete)&lt;a class=&quot;zola-anchor&quot; href=&quot;#2-indexing-maps-formal-and-concrete&quot; aria-label=&quot;Anchor link for: 2-indexing-maps-formal-and-concrete&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;For a structured op with iteration indices $\mathbf{i}=(i_0,\ldots,i_{n-1})$, each operand gets an affine map
+$$
+f_{\text{opnd}}:\mathbb{Z}^n\to\mathbb{Z}^r,\qquad \mathbf{i}\mapsto \text{subscripts}
+$$&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;Notation.&lt;&#x2F;strong&gt; The subscript in $f_{\text{opnd}}$ means &lt;em&gt;per-operand&lt;&#x2F;em&gt; indexing map. For a given op you have one map per operand:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Inputs: $f_A, f_B, \ldots$ (often referred to generically as $f_{\text{in}}$ for an input).&lt;&#x2F;li&gt;
+&lt;li&gt;Output&#x2F;result: $f_{\text{out}}$.
+These maps live over the op&#x27;s iterator space and tell &lt;strong&gt;which element&lt;&#x2F;strong&gt; of each operand is touched at a point.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;that answers: &lt;em&gt;“At this loop point, which element of this tensor&#x2F;buffer do I touch?”&lt;&#x2F;em&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;Matmul&lt;&#x2F;strong&gt; (iterators $(i,j,k)$; $i,j$ parallel, $k$ reduction):&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;$f_A(i,j,k)=(i,k)$&lt;&#x2F;li&gt;
+&lt;li&gt;$f_B(i,j,k)=(k,j)$&lt;&#x2F;li&gt;
+&lt;li&gt;$f_C(i,j,k)=(i,j)$ ← output map&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;&lt;strong&gt;Elementwise same-shape&lt;&#x2F;strong&gt; (iterators $(i,j)$):&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;for each input, $f_{\text{in}}(i,j)=(i,j)$; for the output, $f_{\text{out}}(i,j)=(i,j)$&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Broadcasts, transposes, striding, dilations are all just different affine maps.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;3-invert-vs-preimage-the-actual-thing-you-need&quot;&gt;3) “Invert” vs &lt;strong&gt;preimage&lt;&#x2F;strong&gt; (the actual thing you need)&lt;a class=&quot;zola-anchor&quot; href=&quot;#3-invert-vs-preimage-the-actual-thing-you-need&quot; aria-label=&quot;Anchor link for: 3-invert-vs-preimage-the-actual-thing-you-need&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Given a consumer &lt;strong&gt;tile&lt;&#x2F;strong&gt; $S\subseteq\mathbb{Z}^r$ in output index space and the producer’s output map $f_{\text{out}}:\mathbb{Z}^n\to\mathbb{Z}^r$, what you want is the &lt;strong&gt;preimage&lt;&#x2F;strong&gt;:&lt;&#x2F;p&gt;
+&lt;p&gt;$$
+T = f_{\text{out}}^{-1}(S) = \lbrace \mathbf{i}\in\mathbb{Z}^n \mid f_{\text{out}}(\mathbf{i}) \in S \rbrace.
+$$&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;If $f_{\text{out}}$ is &lt;strong&gt;unimodular&#x2F;permutation&lt;&#x2F;strong&gt; → there is a true algebraic inverse (nice!).&lt;&#x2F;li&gt;
+&lt;li&gt;If it &lt;strong&gt;drops&lt;&#x2F;strong&gt; dims (projection&#x2F;reduction), &lt;strong&gt;strides&lt;&#x2F;strong&gt;, or &lt;strong&gt;dilates&lt;&#x2F;strong&gt; → no inverse; &lt;strong&gt;preimage&lt;&#x2F;strong&gt; still exists and is what we use.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;&lt;strong&gt;Examples&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Permutation:&lt;&#x2F;strong&gt; $f(i,j)=(j,i)$. For a rectangular tile $S=I\times J$, $f^{-1}(S)=J\times I$.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Reduction:&lt;&#x2F;strong&gt; matmul $f(i,j,k)=(i,j)$. For tile $S=I\times J$, $f^{-1}(S)=I\times J\times [0..K)$.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Stride:&lt;&#x2F;strong&gt; $f(i,j)=(2i,j)$. Preimage adds congruence: $ \lbrace (i,j)\mid 2i\in I,\ j\in J \rbrace $ (appears as strided slices).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Once you have $T$ (the subset of producer iterations), the &lt;strong&gt;input slices&lt;&#x2F;strong&gt; you need are just the &lt;strong&gt;images&lt;&#x2F;strong&gt; $g_A(T), g_B(T),\ldots$ under each input map $g$.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;4-fusion-across-mismatched-iteration-spaces-recipe&quot;&gt;4) Fusion across mismatched iteration spaces (recipe)&lt;a class=&quot;zola-anchor&quot; href=&quot;#4-fusion-across-mismatched-iteration-spaces-recipe&quot; aria-label=&quot;Anchor link for: 4-fusion-across-mismatched-iteration-spaces-recipe&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Tile the consumer&lt;&#x2F;strong&gt; over its parallel dims: choose $S\subseteq\mathbb{Z}^r$.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Use→def&lt;&#x2F;strong&gt; to find the producer of the consumer’s operand.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Pull back&lt;&#x2F;strong&gt; the tile: $T=f_{\text{out}}^{-1}(S)$ in the producer’s loop space.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Extract input slices&lt;&#x2F;strong&gt; using each input map’s image of $T$.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Run the producer on $T$ &lt;em&gt;inside&lt;&#x2F;em&gt; the consumer tile&lt;&#x2F;strong&gt;; feed the partial result directly; no giant temporaries.&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;p&gt;&lt;strong&gt;Mini numeric sanity check&lt;&#x2F;strong&gt;
+Let $M=4,\ N=6,\ K=3$. Tile size $(T_m,T_n)=(2,2)$ at offset $(i_0,j_0)=(2,4)$.&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Consumer tile $S=\lbrace i\in\lbrace 2,3 \rbrace,\ j\in\lbrace 4,5 \rbrace \rbrace$.&lt;&#x2F;li&gt;
+&lt;li&gt;Matmul output map $f(i,j,k)=(i,j)$ ⇒
+$T=\lbrace (i,j,k)\mid i\in\lbrace 2,3 \rbrace,\ j\in\lbrace 4,5 \rbrace,\ k\in\lbrace 0,1,2 \rbrace \rbrace$.&lt;&#x2F;li&gt;
+&lt;li&gt;Needed slices:&lt;&#x2F;li&gt;
+&lt;li&gt;$A(i,k)$ ⇒ rows $\lbrace 2,3 \rbrace$ and all $k$ ⇒ $A_{\text{slice}} : 2 \times 3$.&lt;&#x2F;li&gt;
+&lt;li&gt;$B(k,j)$ ⇒ all $k$ and cols $\lbrace 4,5 \rbrace$ ⇒ $B_{\text{slice}} : 3 \times 2$.&lt;&#x2F;li&gt;
+&lt;li&gt;Compute a $2\times 2$ partial, then apply the elementwise op and insert.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;5-rematerialization-when-why&quot;&gt;5) Rematerialization (when&#x2F;why)&lt;a class=&quot;zola-anchor&quot; href=&quot;#5-rematerialization-when-why&quot; aria-label=&quot;Anchor link for: 5-rematerialization-when-why&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;We call it &lt;strong&gt;rematerialization&lt;&#x2F;strong&gt; when we recompute values per tile instead of storing a big temporary in memory.&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;Typical cases&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;Upstream elementwise producers: $L=\mathrm{relu}(L_0)$, $R=\exp(R_0)$.
+If you fuse them into each tile, elements like $L[i,k]$ are recomputed &lt;strong&gt;per $j$-tile&lt;&#x2F;strong&gt;; duplication factor $\approx N&#x2F;T_n$. Similarly $R[k,j]$ across $i$-tiles; factor $\approx M&#x2F;T_m$.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;Same producer result used by multiple consumers → recompute the same producer tile in each consumer’s loop.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;&lt;strong&gt;Why it can win:&lt;&#x2F;strong&gt; modern kernels are memory-bound. Extra flops are cheap; avoiding DRAM traffic and improving locality is often a net gain.&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;When to avoid:&lt;&#x2F;strong&gt; producer is heavy and reused many times; or fusion hides &lt;code&gt;vector.contract&lt;&#x2F;code&gt;&#x2F;MMA patterns and spikes register pressure.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;6-practical-heuristics&quot;&gt;6) Practical heuristics&lt;a class=&quot;zola-anchor&quot; href=&quot;#6-practical-heuristics&quot; aria-label=&quot;Anchor link for: 6-practical-heuristics&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Tile parallel dims first&lt;&#x2F;strong&gt;; shape inner kernels for cache&#x2F;SMEM; keep unit-stride for vector lanes.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Fuse cheap, pure producers&#x2F;epilogues&lt;&#x2F;strong&gt;; prefer rematerialization over big temporaries.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Keep contractions recognizable&lt;&#x2F;strong&gt; so they lower to &lt;code&gt;vector.contract&lt;&#x2F;code&gt;&#x2F;tensor cores before heavy epilogues.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Measure pressure&lt;&#x2F;strong&gt;: spills on CPU; regs&#x2F;thread &amp;amp; occupancy on GPU.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;7-glossary-fast&quot;&gt;7) Glossary (fast)&lt;a class=&quot;zola-anchor&quot; href=&quot;#7-glossary-fast&quot; aria-label=&quot;Anchor link for: 7-glossary-fast&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Use-def:&lt;&#x2F;strong&gt; SSA graph edges from values to their users&#x2F;definers.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Indexing map:&lt;&#x2F;strong&gt; affine map from loop indices to subscripts ($f:\mathbb{Z}^n\to\mathbb{Z}^r$).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Preimage:&lt;&#x2F;strong&gt; $ f^{-1}(S) = \lbrace \mathbf{i} \mid f(\mathbf{i})\in S \rbrace $; what you compute to fuse a producer tile.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Rematerialization:&lt;&#x2F;strong&gt; recomputing values per tile to avoid storing&#x2F;reloading them from memory.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Materialize loops:&lt;&#x2F;strong&gt; turn implicit iteration into &lt;code&gt;scf.for&lt;&#x2F;code&gt;&#x2F;&lt;code&gt;scf.forall&lt;&#x2F;code&gt; + (tensor) slices.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;8-tiny-mlir-snippet-to-anchor-the-math&quot;&gt;8) Tiny MLIR snippet to anchor the math&lt;a class=&quot;zola-anchor&quot; href=&quot;#8-tiny-mlir-snippet-to-anchor-the-math&quot; aria-label=&quot;Anchor link for: 8-tiny-mlir-snippet-to-anchor-the-math&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;&lt;strong&gt;Matmul tile inside consumer tile (conceptual):&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;mlir&quot; class=&quot;language-mlir z-code&quot;&gt;&lt;code class=&quot;language-mlir&quot; data-lang=&quot;mlir&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%lhs_slice = tensor.extract_slice %L[%i0, 0] [Tm, K] [1,1]
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%rhs_slice = tensor.extract_slice %R[0, %j0] [K, Tn] [1,1]
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%res_slice = tensor.extract_slice %Res[%i0, %j0][Tm, Tn] [1,1]
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%partial = linalg.generic {
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; indexing_maps = [ (i,j,k)-&amp;gt;(i,k), (i,j,k)-&amp;gt;(k,j), (i,j,k)-&amp;gt;(i,j) ],
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; iterator_types = [&amp;quot;parallel&amp;quot;,&amp;quot;parallel&amp;quot;,&amp;quot;reduction&amp;quot;]
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;} ins(%lhs_slice, %rhs_slice : tensor&amp;lt;Tm x Kxf32&amp;gt;, tensor&amp;lt;K x Tnxf32&amp;gt;)
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; outs(%res_slice : tensor&amp;lt;Tm x Tnxf32&amp;gt;) {
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;^bb0(%a: f32, %b: f32, %acc: f32):
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; %p = arith.mulf %a, %b : f32
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; %s = arith.addf %acc, %p : f32
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; linalg.yield %s : f32
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;} -&amp;gt; tensor&amp;lt;Tm x Tnxf32&amp;gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+</content>
+	</entry>
+</feed>

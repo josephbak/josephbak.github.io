@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  
+  
+    
+  
+  <meta name="description" content="My blog site.">
+
+  <title>MLIR Generic DAG Rewriter</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="https://josephbak.github.io/img/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://josephbak.github.io/img/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://josephbak.github.io/img/apple-touch-icon.png">
+  
+  <style>
+
+  /* light mode colors */
+  body {
+    --primary-color: #5871a2;
+    --primary-pale-color: #5871a233;
+    --primary-decoration-color: #5871a210;
+    --bg-color: #ffffff;
+    --text-color: #2f3030;
+    --text-pale-color: #767676;
+    --text-decoration-color: #a9a9a9;
+    --highlight-mark-color: #5f75b020;
+
+    --callout-note-color: #5871a2;
+    --callout-tip-color: #268556;
+    --callout-important-color: #885fc9;
+    --callout-warning-color: #ab6632;
+    --callout-caution-color: #c64e4e;
+  }
+
+  /* dark mode colors */
+  body.dark {
+    --primary-color: #6f8fd1;
+    --primary-pale-color: #6f8fd166;
+    --primary-decoration-color: #6f8fd112;
+    --bg-color: #1c1c1c;
+    --text-color: #c1c1c1;
+    --text-pale-color: #848484;
+    --text-decoration-color: #5f5f5f;
+    --highlight-mark-color: #8296cb3b;
+
+    --callout-note-color: #6f8fd1;
+    --callout-tip-color: #47976f;
+    --callout-important-color: #9776cd;
+    --callout-warning-color: #ad7a52;
+    --callout-caution-color: #d06161;
+  }
+
+  /* typography */
+  body {
+    --main-font: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --code-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --homepage-max-width: 768px;
+    --main-max-width: 768px;
+    --avatar-size: 60px;
+    --font-size: 16px;
+    --line-height: 1.75;
+    --img-border-radius: 0px;
+    --detail-border-radius: 0px;
+    --dark-mode-img-brightness: 0.75;
+    --dark-mode-chart-brightness: 0.75;
+    --inline-code-border-radius: 2px;
+    --inline-code-bg-color: var(--primary-decoration-color);
+    --block-code-border-radius: 0px;
+    --block-code-border-color: var(--primary-color);
+    --detail-border-color: var(--primary-color);
+  }
+
+</style>
+
+  <link rel="stylesheet" href="https://josephbak.github.io/main.css">
+  
+
+<link id="hl" rel="stylesheet" type="text/css" href="/hl-light.css" />
+
+
+
+  
+</head>
+
+<body class="post">
+  
+  <script>
+    const theme = sessionStorage.getItem('theme');
+    const match = window.matchMedia("(prefers-color-scheme: dark)").matches
+    if ((theme && theme == 'dark') || (!theme && match)) {
+      document.body.classList.add('dark');
+      const hl = document.querySelector('link#hl');
+      if (hl) hl.href = 'https://josephbak.github.io/hl-dark.css';
+    }
+  </script>
+  
+  
+<div id="wrapper">
+  <div id="blank"></div>
+  <aside>
+    
+    
+    <nav>
+      <ul>
+        
+        <li>
+          <a class="h2" href="#tl-dr">TL;DR</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#core-idea-match-one-dag-directed-acyclic-graph-replace-with-another">Core idea: “Match one DAG (Directed Acyclic Graph), replace with another”</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#canonicalization-vs-constant-folding-vs-clients">Canonicalization vs Constant Folding vs Clients</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#ast-abstract-syntax-tree-vs-dag-directed-acyclic-graph">AST (Abstract Syntax Tree) vs DAG (Directed Acyclic Graph)</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#how-dag-directed-acyclic-graph-sharing-happens-construction">How DAG (Directed Acyclic Graph) sharing happens (construction)</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#cse-common-subexpression-elimination-vs-peephole-combiners">CSE (Common Subexpression Elimination) vs Peephole “Combiners”</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#dominance-hoisting-licm-loop-invariant-code-motion-gvn-global-value-numbering-cfg-control-flow-graph">Dominance, Hoisting, LICM (Loop‑Invariant Code Motion), GVN (Global Value Numbering), CFG (Control‑Flow Graph)</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#mlir-multi-level-intermediate-representation-rewrite-infrastructure">MLIR (Multi-Level Intermediate Representation) rewrite infrastructure</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#llvm-low-level-virtual-machine-selectiondag-selection-directed-acyclic-graph-instruction-selection">LLVM (Low Level Virtual Machine) SelectionDAG (Selection Directed Acyclic Graph) instruction selection</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#equality-saturation-e-graphs-why-it-matters">Equality saturation (e‑graphs) — why it matters</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#goals-of-mlir-multi-level-intermediate-representation-generic-dag-directed-acyclic-graph-rewriter">Goals of MLIR (Multi-Level Intermediate Representation) generic DAG (Directed Acyclic Graph) rewriter</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#non-goals-limits">Non‑goals &#x2F; limits</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#minimal-runnable-mlir-multi-level-intermediate-representation-snippets">Minimal, runnable MLIR (Multi-Level Intermediate Representation) snippets</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#practical-takeaways">Practical takeaways</a>
+          
+        </li>
+        
+      </ul>
+    </nav>
+    
+    
+    <button id="back-to-top" aria-label="back to top">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-arrow-up"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+
+    </button>
+    
+  </aside>
+  <main>
+    
+<header>
+  <nav>
+    <a id="back-link" href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts">← Back</a>
+  </nav>
+</header>
+
+
+    <div>
+      
+      
+      
+      
+      <div id="copy-cfg" style="display: none;" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+"></div>
+      
+      <article class="prose">
+        <h1>MLIR Generic DAG Rewriter</h1>
+        <div id="post-info">
+          <div id="date">
+            <span id="publish">Oct 2, 2025</span>
+            </div>
+
+          
+        </div>
+
+        
+        
+
+        
+
+        <!-- Notes on MLIR (Multi-Level Intermediate Representation) Generic DAG (Directed Acyclic Graph) Rewriter -->
+<p>A compact, publish‑ready summary of what I learned from <strong>https://mlir.llvm.org/docs/Rationale/RationaleGenericDAGRewriter/</strong> and the discussion.</p>
+<hr />
+<h2 id="tl-dr">TL;DR<a class="zola-anchor" href="#tl-dr" aria-label="Anchor link for: tl-dr" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li>MLIR (Multi-Level Intermediate Representation) needs a <strong>general DAG (Directed Acyclic Graph)-to-DAG (Directed Acyclic Graph)</strong> rewrite engine to handle many optimizations and lowerings across abstraction levels.</li>
+<li>This is different from <strong>CSE (Common Subexpression Elimination)</strong>: DAG (Directed Acyclic Graph) rewriting <strong>changes</strong> the shape (e.g., fuse <code>mul+add</code> → <strong>FMA (Fused Multiply Add)</strong>); CSE (Common Subexpression Elimination) only <strong>deduplicates</strong>.</li>
+<li>The infrastructure aims for <strong>declarative, reusable patterns</strong>, robust legality checks, good diagnostics, and flexible algorithms because global DAG tiling is <strong>NP (Nondeterministic Polynomial time)-complete</strong>.</li>
+</ul>
+<hr />
+<h2 id="core-idea-match-one-dag-directed-acyclic-graph-replace-with-another">Core idea: “Match one DAG (Directed Acyclic Graph), replace with another”<a class="zola-anchor" href="#core-idea-match-one-dag-directed-acyclic-graph-replace-with-another" aria-label="Anchor link for: core-idea-match-one-dag-directed-acyclic-graph-replace-with-another" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li>IR (Intermediate Representation) is a graph: nodes = <strong>operations</strong>, edges = <strong>SSA (Static Single Assignment) values</strong>.</li>
+<li>Pattern rewriter finds a <strong>subgraph</strong> (e.g., <code>add</code> feeding <code>mul</code>) and replaces it with an <strong>equivalent</strong> but better subgraph (e.g., a single <strong>FMA (Fused Multiply Add)</strong>).</li>
+</ul>
+<p><strong>ASCII</strong></p>
+<pre class="z-code"><code><span class="z-text z-plain">Before:            After:
+</span><span class="z-text z-plain"> a   b   c          a   b   c
+</span><span class="z-text z-plain">  \ /               \ | /
+</span><span class="z-text z-plain">  add                fma         # (a + b) * c
+</span><span class="z-text z-plain">   |                               
+</span><span class="z-text z-plain">   v
+</span><span class="z-text z-plain">  mul
+</span></code></pre>
+<hr />
+<h2 id="canonicalization-vs-constant-folding-vs-clients">Canonicalization vs Constant Folding vs Clients<a class="zola-anchor" href="#canonicalization-vs-constant-folding-vs-clients" aria-label="Anchor link for: canonicalization-vs-constant-folding-vs-clients" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li><strong>Canonicalization</strong>: normalize equivalent forms (e.g., <code>x+0 → x</code>, reorder commutative ops) so later passes see a <strong>standard</strong> shape.</li>
+<li><strong>Constant folding</strong>: if operands are constants, compute the result constant. In MLIR (Multi-Level Intermediate Representation), <code>fold()</code> <strong>returns</strong> constants; <strong>clients</strong> (passes like canonicalizer) update IR (Intermediate Representation). This avoids iterator invalidation.</li>
+<li><strong>Clients</strong> = the users of these APIs (Application Programming Interfaces): canonicalization, simplifiers, etc.—they call <code>op.fold()</code> and perform the IR (Intermediate Representation) edits safely.</li>
+</ul>
+<hr />
+<h2 id="ast-abstract-syntax-tree-vs-dag-directed-acyclic-graph">AST (Abstract Syntax Tree) vs DAG (Directed Acyclic Graph)<a class="zola-anchor" href="#ast-abstract-syntax-tree-vs-dag-directed-acyclic-graph" aria-label="Anchor link for: ast-abstract-syntax-tree-vs-dag-directed-acyclic-graph" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li><strong>AST (Abstract Syntax Tree)</strong> is a <strong>tree</strong> → no natural sharing; <code>(x+y)</code> duplicated in <code>(x+y)*(x+y)</code>.</li>
+<li><strong>DAG (Directed Acyclic Graph)</strong> permits sharing; one node for <code>(x+y)</code> with two uses.</li>
+<li>DAG (Directed Acyclic Graph) matching is more powerful than tree matching, but must guard against <strong>duplicating</strong> shared work.</li>
+</ul>
+<hr />
+<h2 id="how-dag-directed-acyclic-graph-sharing-happens-construction">How DAG (Directed Acyclic Graph) sharing happens (construction)<a class="zola-anchor" href="#how-dag-directed-acyclic-graph-sharing-happens-construction" aria-label="Anchor link for: how-dag-directed-acyclic-graph-sharing-happens-construction" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li><strong>Hash‑consing / value numbering</strong>: map <code>(op, operands, attributes, types)</code> → existing node; reuse it instead of re‑creating.</li>
+<li><strong>SSA (Static Single Assignment)</strong> naturally encodes sharing: one definition, many uses.</li>
+</ul>
+<hr />
+<h2 id="cse-common-subexpression-elimination-vs-peephole-combiners">CSE (Common Subexpression Elimination) vs Peephole “Combiners”<a class="zola-anchor" href="#cse-common-subexpression-elimination-vs-peephole-combiners" aria-label="Anchor link for: cse-common-subexpression-elimination-vs-peephole-combiners" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li><strong>CSE (Common Subexpression Elimination)</strong>: remove <strong>duplicate</strong> equivalent ops when the earlier one <strong>dominates</strong> the later.</li>
+<li><strong>Combiners</strong> (peepholes): local <strong>algebraic rewrites</strong> within a small window (e.g., fuse, fold, strength‑reduce). Order and local cost matter.</li>
+</ul>
+<p><strong>Strength reduction examples</strong></p>
+<ul>
+<li><code>x*2 → x&lt;&lt;1</code> (bit‑shift), <code>x%2^k → x&amp;(2^k−1)</code> for <strong>unsigned</strong> or non‑negative <code>x</code>.</li>
+<li>For non‑power‑of‑two divisors, use “magic” multiply+shift sequences, not masking.</li>
+</ul>
+<hr />
+<h2 id="dominance-hoisting-licm-loop-invariant-code-motion-gvn-global-value-numbering-cfg-control-flow-graph">Dominance, Hoisting, LICM (Loop‑Invariant Code Motion), GVN (Global Value Numbering), CFG (Control‑Flow Graph)<a class="zola-anchor" href="#dominance-hoisting-licm-loop-invariant-code-motion-gvn-global-value-numbering-cfg-control-flow-graph" aria-label="Anchor link for: dominance-hoisting-licm-loop-invariant-code-motion-gvn-global-value-numbering-cfg-control-flow-graph" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li><strong>Dominance</strong>: A dominates B if A is executed <strong>on every path</strong> to B.</li>
+<li><strong>Hoisting</strong>: move an op to a <strong>dominating</strong> block so it runs once and is reused. Trade‑off: longer live ranges → higher <strong>register pressure</strong>.</li>
+<li><strong>LICM (Loop‑Invariant Code Motion)</strong>: move loop‑invariant work to the loop preheader (or sink it) when safe/profitable.</li>
+<li><strong>GVN (Global Value Numbering)</strong>: global equivalence + redundancy elimination across the <strong>CFG (Control‑Flow Graph)</strong> (MLIR (Multi-Level Intermediate Representation) core relies more on CSE (Common Subexpression Elimination), canonicalization, SCCP (Sparse Conditional Constant Propagation), etc.; classic GVN (Global Value Numbering) is on the LLVM (Low Level Virtual Machine) side).</li>
+<li><strong>CFG (Control‑Flow Graph)</strong>: nodes = basic blocks; edges = possible control transfer.</li>
+</ul>
+<hr />
+<h2 id="mlir-multi-level-intermediate-representation-rewrite-infrastructure">MLIR (Multi-Level Intermediate Representation) rewrite infrastructure<a class="zola-anchor" href="#mlir-multi-level-intermediate-representation-rewrite-infrastructure" aria-label="Anchor link for: mlir-multi-level-intermediate-representation-rewrite-infrastructure" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li><strong>RewritePattern + PatternRewriter</strong> with greedy drivers (<code>applyPatternsAndFoldGreedily</code>).</li>
+<li><strong>DRR (Declarative Rewrite Rules)</strong> (TableGen) and <strong>PDL/PDLL (Pattern Description Language / Pattern Description Language frontend)</strong> for declarative pattern authoring.</li>
+<li><strong>Canonicalizer</strong> + op‑level <code>fold()</code> unify local cleanups.</li>
+<li><strong>Dialect Conversion</strong>: legality, 1→N/N→M rewrites, type conversion; not just peepholes.</li>
+<li><strong>Transform dialect</strong>: orchestrate how/where to apply transformations using IR (Intermediate Representation) itself.</li>
+</ul>
+<hr />
+<h2 id="llvm-low-level-virtual-machine-selectiondag-selection-directed-acyclic-graph-instruction-selection">LLVM (Low Level Virtual Machine) SelectionDAG (Selection Directed Acyclic Graph) instruction selection<a class="zola-anchor" href="#llvm-low-level-virtual-machine-selectiondag-selection-directed-acyclic-graph-instruction-selection" aria-label="Anchor link for: llvm-low-level-virtual-machine-selectiondag-selection-directed-acyclic-graph-instruction-selection" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li>Declarative <code>Pat&lt;&gt;</code> patterns (TableGen) match target‑independent DAGs (Directed Acyclic Graphs) and rewrite to machine instructions.</li>
+<li>Pros: declarative, identity‑aware, compact state machine, type‑checked, extensible with custom C++.</li>
+<li>Cons: narrowly scoped to <strong>instruction selection</strong>, requires rebuild to extend, limited diagnostics, SelectionDAG (Selection Directed Acyclic Graph) constraints (e.g., multi‑result pain), accumulated tech debt.</li>
+</ul>
+<hr />
+<h2 id="equality-saturation-e-graphs-why-it-matters">Equality saturation (e‑graphs) — why it matters<a class="zola-anchor" href="#equality-saturation-e-graphs-why-it-matters" aria-label="Anchor link for: equality-saturation-e-graphs-why-it-matters" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li>Solves the “optimizing too early” problem: keep <strong>all</strong> equivalent forms; pick best later via a cost model.</li>
+<li>Trade‑off: search‑space growth; prototypes exist around MLIR (Multi-Level Intermediate Representation), but not core yet.</li>
+</ul>
+<hr />
+<h2 id="goals-of-mlir-multi-level-intermediate-representation-generic-dag-directed-acyclic-graph-rewriter">Goals of MLIR (Multi-Level Intermediate Representation) generic DAG (Directed Acyclic Graph) rewriter<a class="zola-anchor" href="#goals-of-mlir-multi-level-intermediate-representation-generic-dag-directed-acyclic-graph-rewriter" aria-label="Anchor link for: goals-of-mlir-multi-level-intermediate-representation-generic-dag-directed-acyclic-graph-rewriter" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li>Support <strong>1→N</strong>, <strong>M→1</strong>, <strong>M→N</strong> with <strong>benefits</strong>; infra picks best local match.</li>
+<li>Separate (1) best pattern at a root, (2) whole‑graph rewrite strategy, (3) pattern definitions.</li>
+<li>Enable iterative rewrites with different client trade‑offs.</li>
+<li>Make patterns easy, safe, and resilient: simple APIs (Application Programming Interfaces), clean legality separation, strong provenance and diagnostics.</li>
+</ul>
+<h2 id="non-goals-limits">Non‑goals / limits<a class="zola-anchor" href="#non-goals-limits" aria-label="Anchor link for: non-goals-limits" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li>Not for global data‑flow problems (e.g., CSE (Common Subexpression Elimination), SCCP (Sparse Conditional Constant Propagation)).</li>
+<li>Limited to DAGs (Directed Acyclic Graphs); won’t see through cycles / across block arguments.</li>
+<li>Pattern “benefits” are magic numbers; each application interprets them.</li>
+</ul>
+<hr />
+<h2 id="minimal-runnable-mlir-multi-level-intermediate-representation-snippets">Minimal, runnable MLIR (Multi-Level Intermediate Representation) snippets<a class="zola-anchor" href="#minimal-runnable-mlir-multi-level-intermediate-representation-snippets" aria-label="Anchor link for: minimal-runnable-mlir-multi-level-intermediate-representation-snippets" style="visibility: hidden;"></a>
+</h2>
+<p><strong>A) CSE (Common Subexpression Elimination)</strong></p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">module {
+</span><span class="z-text z-plain">  func.func @cse(%a: i32, %b: i32) -&gt; i32 {
+</span><span class="z-text z-plain">    %0 = arith.addi %a, %b : i32 loc(&quot;A&quot;)
+</span><span class="z-text z-plain">    %1 = arith.addi %a, %b : i32 loc(&quot;B&quot;)
+</span><span class="z-text z-plain">    %2 = arith.muli %0, %1 : i32
+</span><span class="z-text z-plain">    return %2 : i32
+</span><span class="z-text z-plain">  }
+</span><span class="z-text z-plain">}
+</span></code></pre>
+<p>Run: <code>mlir-opt input.mlir -cse</code>
+Result: <code>%1</code> removed; <code>%2 = arith.muli %0, %0</code>.</p>
+<p><strong>B) LICM (Loop‑Invariant Code Motion)</strong></p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">module {
+</span><span class="z-text z-plain">  func.func @licm(%A: i32, %n: index) -&gt; i32 {
+</span><span class="z-text z-plain">    %c0  = arith.constant 0 : index
+</span><span class="z-text z-plain">    %c1  = arith.constant 1 : index
+</span><span class="z-text z-plain">    %z0  = arith.constant 0 : i32
+</span><span class="z-text z-plain">    %res = scf.for %i = %c0 to %n step %c1 iter_args(%acc = %z0) -&gt; (i32) {
+</span><span class="z-text z-plain">      %two   = arith.constant 2 : i32
+</span><span class="z-text z-plain">      %scale = arith.muli %A, %two : i32
+</span><span class="z-text z-plain">      %acc1  = arith.addi %acc, %scale : i32
+</span><span class="z-text z-plain">      scf.yield %acc1 : i32
+</span><span class="z-text z-plain">    }
+</span><span class="z-text z-plain">    return %res : i32
+</span><span class="z-text z-plain">  }
+</span><span class="z-text z-plain">}
+</span></code></pre>
+<p>Run: <code>mlir-opt input.mlir -loop-invariant-code-motion</code>
+Effect: <code>%two</code> and <code>%scale</code> are hoisted to the preheader; loop body shrinks.</p>
+<hr />
+<h2 id="practical-takeaways">Practical takeaways<a class="zola-anchor" href="#practical-takeaways" aria-label="Anchor link for: practical-takeaways" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li>Use the <strong>canonicalizer</strong> + <strong>CSE (Common Subexpression Elimination)</strong> early to normalize IR (Intermediate Representation); then apply richer <strong>RewritePattern</strong>s.</li>
+<li>Prefer <strong>declarative patterns</strong> (DRR (Declarative Rewrite Rules), PDL/PDLL (Pattern Description Language / Pattern Description Language frontend)) over ad‑hoc C++ when possible.</li>
+<li>Be mindful of <strong>dominance</strong>, <strong>legality</strong>, and <strong>register pressure</strong> when hoisting/fusing.</li>
+<li>Consider <strong>equality saturation</strong> for domains where early canonicalization can kill opportunities.</li>
+<li>Remember limits: this infra isn’t a substitute for <strong>CFG (Control‑Flow Graph)</strong>-wide analyses like <strong>GVN (Global Value Numbering)</strong> or <strong>SCCP (Sparse Conditional Constant Propagation)</strong>.</li>
+</ul>
+<hr />
+<p><em>Prepared as a quick post‑able note; feel free to copy/paste to your site as is.</em></p>
+
+      </article>
+
+      
+      
+
+      
+      
+    </div>
+
+    
+
+
+<footer>
+  <div class="left">
+    <div class="copyright">
+      © 2025 &lt;joseph bak&gt;
+      
+      <span>|</span>
+      Built with <a href="https://www.getzola.org" rel="noreferrer" target="_blank">zola</a> and <a href="https://github.com/isunjn/serene" rel="noreferrer" target="_blank">serene</a>
+      
+    </div>
+  </div>
+
+  <div class="right">
+    
+    
+      
+    
+    
+    <a id="rss-btn" href="https://josephbak.github.io/posts/feed.xml">RSS</a>
+    
+    
+
+    
+    
+    
+    <button id="theme-toggle" aria-label="theme switch">
+      <span class="moon-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M10 7C10 10.866 13.134 14 17 14C18.9584 14 20.729 13.1957 21.9995 11.8995C22 11.933 22 11.9665 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C12.0335 2 12.067 2 12.1005 2.00049C10.8043 3.27098 10 5.04157 10 7ZM4 12C4 16.4183 7.58172 20 12 20C15.0583 20 17.7158 18.2839 19.062 15.7621C18.3945 15.9187 17.7035 16 17 16C12.0294 16 8 11.9706 8 7C8 6.29648 8.08133 5.60547 8.2379 4.938C5.71611 6.28423 4 8.9417 4 12Z" fill="currentColor"></path></svg>
+</span>
+      <span class="sun-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M12 18C8.68629 18 6 15.3137 6 12C6 8.68629 8.68629 6 12 6C15.3137 6 18 8.68629 18 12C18 15.3137 15.3137 18 12 18ZM12 16C14.2091 16 16 14.2091 16 12C16 9.79086 14.2091 8 12 8C9.79086 8 8 9.79086 8 12C8 14.2091 9.79086 16 12 16ZM11 1H13V4H11V1ZM11 20H13V23H11V20ZM3.51472 4.92893L4.92893 3.51472L7.05025 5.63604L5.63604 7.05025L3.51472 4.92893ZM16.9497 18.364L18.364 16.9497L20.4853 19.0711L19.0711 20.4853L16.9497 18.364ZM19.0711 3.51472L20.4853 4.92893L18.364 7.05025L16.9497 5.63604L19.0711 3.51472ZM5.63604 16.9497L7.05025 18.364L4.92893 20.4853L3.51472 19.0711L5.63604 16.9497ZM23 11V13H20V11H23ZM4 11V13H1V11H4Z" fill="currentColor"></path></svg>
+</span>
+    </button>
+    
+  </div>
+</footer>
+
+
+
+
+<dialog id="rss-mask">
+  <div>
+    <a href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml">https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml</a>
+    
+    
+    <button autofocus aria-label="copy" data-link="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z" fill="currentColor"></path></svg>
+
+    </button>
+  </div>
+</dialog>
+
+
+
+  </main>
+</div>
+
+  
+<script src="/js/lightense.min.js"></script>
+
+
+  <script src="https://josephbak.github.io/js/main.js"></script>
+</body>
+
+</html>
