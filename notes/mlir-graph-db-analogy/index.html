@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  
+  
+    
+  
+  <meta name="description" content="My blog site.">
+
+  <title>MLIR as a Rewritable Graph Database</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="https://josephbak.github.io/img/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://josephbak.github.io/img/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://josephbak.github.io/img/apple-touch-icon.png">
+  
+  <style>
+
+  /* light mode colors */
+  body {
+    --primary-color: #5871a2;
+    --primary-pale-color: #5871a233;
+    --primary-decoration-color: #5871a210;
+    --bg-color: #ffffff;
+    --text-color: #2f3030;
+    --text-pale-color: #767676;
+    --text-decoration-color: #a9a9a9;
+    --highlight-mark-color: #5f75b020;
+
+    --callout-note-color: #5871a2;
+    --callout-tip-color: #268556;
+    --callout-important-color: #885fc9;
+    --callout-warning-color: #ab6632;
+    --callout-caution-color: #c64e4e;
+  }
+
+  /* dark mode colors */
+  body.dark {
+    --primary-color: #6f8fd1;
+    --primary-pale-color: #6f8fd166;
+    --primary-decoration-color: #6f8fd112;
+    --bg-color: #1c1c1c;
+    --text-color: #c1c1c1;
+    --text-pale-color: #848484;
+    --text-decoration-color: #5f5f5f;
+    --highlight-mark-color: #8296cb3b;
+
+    --callout-note-color: #6f8fd1;
+    --callout-tip-color: #47976f;
+    --callout-important-color: #9776cd;
+    --callout-warning-color: #ad7a52;
+    --callout-caution-color: #d06161;
+  }
+
+  /* typography */
+  body {
+    --main-font: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --code-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --homepage-max-width: 768px;
+    --main-max-width: 768px;
+    --avatar-size: 60px;
+    --font-size: 16px;
+    --line-height: 1.75;
+    --img-border-radius: 0px;
+    --detail-border-radius: 0px;
+    --dark-mode-img-brightness: 0.75;
+    --dark-mode-chart-brightness: 0.75;
+    --inline-code-border-radius: 2px;
+    --inline-code-bg-color: var(--primary-decoration-color);
+    --block-code-border-radius: 0px;
+    --block-code-border-color: var(--primary-color);
+    --detail-border-color: var(--primary-color);
+  }
+
+</style>
+
+  <link rel="stylesheet" href="https://josephbak.github.io/main.css">
+  
+
+<link id="hl" rel="stylesheet" type="text/css" href="/hl-light.css" />
+
+
+
+  
+</head>
+
+<body class="post">
+  
+  <script>
+    const theme = sessionStorage.getItem('theme');
+    const match = window.matchMedia("(prefers-color-scheme: dark)").matches
+    if ((theme && theme == 'dark') || (!theme && match)) {
+      document.body.classList.add('dark');
+      const hl = document.querySelector('link#hl');
+      if (hl) hl.href = 'https://josephbak.github.io/hl-dark.css';
+    }
+  </script>
+  
+  
+<div id="wrapper">
+  <div id="blank"></div>
+  <aside>
+    
+    
+    <nav>
+      <ul>
+        
+        <li>
+          <a class="h2" href="#1-concept-overview">1. Concept Overview</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#2-why-database-not-just-graph">2. Why &quot;Database&quot;, Not Just &quot;Graph&quot;</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#3-the-core-mapping">3. The Core Mapping</a>
+          
+          <ul>
+            
+            <li>
+              <a class="h3" href="#ops-schema">Ops = Schema</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#patterns-rewrite-rules">Patterns = Rewrite Rules</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#passes-query-engine">Passes = Query Engine</a>
+            </li>
+            
+          </ul>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#4-related-work-and-analogues">4. Related Work and Analogues</a>
+          
+          <ul>
+            
+            <li>
+              <a class="h3" href="#a-compilers-as-databases">a. Compilers as Databases</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#b-mlir-research">b. MLIR Research</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#c-database-style-compilers">c. Database-style Compilers</a>
+            </li>
+            
+          </ul>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#5-where-the-analogy-fails">5. Where the Analogy Fails</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#6-why-the-analogy-still-matters">6. Why the Analogy Still Matters</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#7-key-references">7. Key References</a>
+          
+        </li>
+        
+      </ul>
+    </nav>
+    
+    
+    <button id="back-to-top" aria-label="back to top">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-arrow-up"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+
+    </button>
+    
+  </aside>
+  <main>
+    
+<header>
+  <nav>
+    <a id="back-link" href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts">← Back</a>
+  </nav>
+</header>
+
+
+    <div>
+      
+      
+      
+      
+      <div id="copy-cfg" style="display: none;" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+"></div>
+      
+      <article class="prose">
+        <h1>MLIR as a Rewritable Graph Database</h1>
+        <div id="post-info">
+          <div id="date">
+            <span id="publish">Oct 4, 2025</span>
+            </div>
+
+          
+        </div>
+
+        
+        
+
+        
+
+        <h2 id="1-concept-overview">1. Concept Overview<a class="zola-anchor" href="#1-concept-overview" aria-label="Anchor link for: 1-concept-overview" style="visibility: hidden;"></a>
+</h2>
+<p><strong>MLIR (Multi-Level Intermediate Representation)</strong> can be understood not just as a compiler IR framework, but as a <em>rewritable, typed graph database</em>.</p>
+<p>At its core, MLIR stores structured, typed, and interconnected data (operations and values) that can be <strong>queried, transformed, and restructured</strong> — just like a database manages records with schema and queries.</p>
+<table><thead><tr><th>Database Concept</th><th>MLIR Equivalent</th><th>Description</th></tr></thead><tbody>
+<tr><td><strong>Schema</strong></td><td>Operation definitions (via TableGen)</td><td>Define what nodes (ops) can exist and what fields (operands, attributes) they have.</td></tr>
+<tr><td><strong>Records</strong></td><td>Operation instances in IR</td><td>Concrete nodes representing program fragments.</td></tr>
+<tr><td><strong>Query / Update</strong></td><td>Rewrite patterns (DRR or C++)</td><td>Declarative or imperative transformations on subsets of the IR graph.</td></tr>
+<tr><td><strong>Query Engine</strong></td><td>Pass manager / pattern driver</td><td>Executes rewrites efficiently, ensuring consistency and termination.</td></tr>
+<tr><td><strong>Materialized View</strong></td><td><code>.mlir</code> textual snapshot</td><td>Human-readable dump of current IR database state.</td></tr>
+</tbody></table>
+<p>So MLIR ≈ <em>a database of program operations</em>, where <strong>dialects</strong> define schemas, <strong>rewrites</strong> define queries/updates, and <strong>passes</strong> execute those transformations.</p>
+<hr />
+<h2 id="2-why-database-not-just-graph">2. Why "Database", Not Just "Graph"<a class="zola-anchor" href="#2-why-database-not-just-graph" aria-label="Anchor link for: 2-why-database-not-just-graph" style="visibility: hidden;"></a>
+</h2>
+<p>MLIR’s IR is a <strong>typed, modular, and queryable graph</strong>, not a raw untyped DAG (Directed Acyclic Graph). Here’s the key distinction:</p>
+<table><thead><tr><th>Aspect</th><th>Plain Graph</th><th>MLIR as Graph Database</th></tr></thead><tbody>
+<tr><td><strong>Structure</strong></td><td>Unstructured nodes/edges</td><td>Nodes (ops) and edges (values) with rich typing.</td></tr>
+<tr><td><strong>Schema</strong></td><td>None</td><td>Defined in ODS/TableGen dialects.</td></tr>
+<tr><td><strong>Queries</strong></td><td>Manual graph traversal</td><td>Pattern-matching and rewrite rules.</td></tr>
+<tr><td><strong>Transactions</strong></td><td>Not defined</td><td>PatternRewriter guarantees consistent state after rewrite.</td></tr>
+<tr><td><strong>Namespaces</strong></td><td>Flat</td><td>Modular dialects (isolated schemas).</td></tr>
+<tr><td><strong>Persistence</strong></td><td>Optional</td><td><code>.mlir</code> provides textual serialization.</td></tr>
+</tbody></table>
+<p>Thus, the term <em>database</em> highlights the presence of:</p>
+<ul>
+<li><strong>Schema-driven structure</strong> (dialects + ops)</li>
+<li><strong>Rule-driven updates</strong> (rewrites)</li>
+<li><strong>Transaction-like consistency</strong> (rewrites maintain SSA, type, dominance)</li>
+<li><strong>Query semantics</strong> (find + replace via patterns)</li>
+</ul>
+<hr />
+<h2 id="3-the-core-mapping">3. The Core Mapping<a class="zola-anchor" href="#3-the-core-mapping" aria-label="Anchor link for: 3-the-core-mapping" style="visibility: hidden;"></a>
+</h2>
+<h3 id="ops-schema">Ops = Schema<a class="zola-anchor" href="#ops-schema" aria-label="Anchor link for: ops-schema" style="visibility: hidden;"></a>
+</h3>
+<p>Define what data (ops) can exist in the IR:</p>
+<pre data-lang="tablegen" class="language-tablegen z-code"><code class="language-tablegen" data-lang="tablegen"><span class="z-text z-plain">def TFL_LeakyReluOp : TFL_Op&lt;TFL_Dialect, &quot;leaky_relu&quot;, [NoMemoryEffect, SameValueType]&gt; {
+</span><span class="z-text z-plain">  let arguments = (ins F32Tensor:$x, F32Attr:$alpha);
+</span><span class="z-text z-plain">  let results   = (outs F32Tensor:$y);
+</span><span class="z-text z-plain">}
+</span></code></pre>
+<p>This is analogous to:</p>
+<pre data-lang="sql" class="language-sql z-code"><code class="language-sql" data-lang="sql"><span class="z-source z-sql"><span class="z-meta z-create z-sql"><span class="z-keyword z-other z-create z-sql">CREATE</span> <span class="z-keyword z-other z-sql">TABLE</span> </span><span class="z-meta z-toc-list z-full-identifier z-sql"><span class="z-entity z-name z-function z-sql">LeakyRelu</span></span> (x FLOAT, alpha FLOAT, y FLOAT);
+</span></code></pre>
+<p>Each operation instance is a <em>record</em> conforming to this schema.</p>
+<h3 id="patterns-rewrite-rules">Patterns = Rewrite Rules<a class="zola-anchor" href="#patterns-rewrite-rules" aria-label="Anchor link for: patterns-rewrite-rules" style="visibility: hidden;"></a>
+</h3>
+<p>Declarative DRR or imperative C++ patterns are like database <em>update queries</em>:</p>
+<pre data-lang="tablegen" class="language-tablegen z-code"><code class="language-tablegen" data-lang="tablegen"><span class="z-text z-plain">def : Pat&lt;(TF_LeakyReluOp $x, F32Attr:$a), (TFL_LeakyReluOp $x, $a)&gt;;
+</span></code></pre>
+<p>Equivalent to:</p>
+<pre data-lang="sql" class="language-sql z-code"><code class="language-sql" data-lang="sql"><span class="z-source z-sql"><span class="z-keyword z-other z-DML z-sql">UPDATE</span> ops <span class="z-keyword z-other z-DML z-sql">SET</span> dialect <span class="z-keyword z-operator z-comparison z-sql">=</span> <span class="z-string z-quoted z-single z-sql"><span class="z-punctuation z-definition z-string z-begin z-sql">&#39;</span>tfl<span class="z-punctuation z-definition z-string z-end z-sql">&#39;</span></span> <span class="z-keyword z-other z-DML z-sql">WHERE</span> op <span class="z-keyword z-operator z-comparison z-sql">=</span> <span class="z-string z-quoted z-single z-sql"><span class="z-punctuation z-definition z-string z-begin z-sql">&#39;</span>tf.LeakyRelu<span class="z-punctuation z-definition z-string z-end z-sql">&#39;</span></span>;
+</span></code></pre>
+<p>They match subgraphs and replace them with new equivalent forms.</p>
+<h3 id="passes-query-engine">Passes = Query Engine<a class="zola-anchor" href="#passes-query-engine" aria-label="Anchor link for: passes-query-engine" style="visibility: hidden;"></a>
+</h3>
+<p>Passes orchestrate which rewrites run and in what order:</p>
+<ul>
+<li>Apply rewrites until fixpoint (no matches).</li>
+<li>Maintain consistency (SSA, type legality).</li>
+<li>Optimize or lower IR progressively.</li>
+</ul>
+<p>Example:</p>
+<pre data-lang="cpp" class="language-cpp z-code"><code class="language-cpp" data-lang="cpp"><span class="z-source z-c++"><span class="z-meta z-struct z-c++"><span class="z-storage z-type z-c++">struct</span> </span><span class="z-meta z-struct z-c++"><span class="z-entity z-name z-struct z-c++">LegalizeTFToTFLPass</span></span><span class="z-meta z-struct z-c++"> <span class="z-punctuation z-separator z-c++">:</span> <span class="z-storage z-modifier z-c++">public</span> <span class="z-entity z-other z-inherited-class z-c++">PassWrapper</span><span class="z-punctuation z-section z-generic z-begin z-c++">&lt;</span>LegalizeTFToTFLPass<span class="z-punctuation z-separator z-c++">,</span> OperationPass<span class="z-punctuation z-section z-generic z-begin z-c++">&lt;</span>ModuleOp<span class="z-punctuation z-section z-generic z-end z-c++">&gt;</span><span class="z-punctuation z-section z-generic z-end z-c++">&gt;</span> <span class="z-meta z-block z-c++"><span class="z-punctuation z-section z-block z-begin z-c++">{</span></span></span><span class="z-meta z-struct z-c++"><span class="z-meta z-block z-c++">
+</span></span></span><span class="z-source z-c++"><span class="z-meta z-struct z-c++"><span class="z-meta z-block z-c++">  <span class="z-storage z-type z-c">void</span> <span class="z-meta z-method z-c++"><span class="z-entity z-name z-function z-c++">runOnOperation</span></span><span class="z-meta z-method z-parameters z-c++"><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-begin z-c++">(</span></span></span><span class="z-meta z-method z-parameters z-c++"><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-end z-c++">)</span></span></span><span class="z-meta z-method z-c++"> <span class="z-storage z-modifier z-c++">override</span> </span><span class="z-meta z-method z-c++"><span class="z-meta z-block z-c++"><span class="z-punctuation z-section z-block z-begin z-c++">{</span></span></span><span class="z-meta z-method z-c++"><span class="z-meta z-block z-c++">
+</span></span></span></span></span><span class="z-source z-c++"><span class="z-meta z-struct z-c++"><span class="z-meta z-block z-c++"><span class="z-meta z-method z-c++"><span class="z-meta z-block z-c++">    RewritePatternSet <span class="z-meta z-function-call z-c++"><span class="z-variable z-function z-c++">patterns</span><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-begin z-c++">(</span></span></span><span class="z-meta z-function-call z-c++"><span class="z-meta z-group z-c++"><span class="z-keyword z-operator z-c">&amp;</span><span class="z-meta z-function-call z-c++"><span class="z-variable z-function z-c++">getContext</span><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-begin z-c++">(</span></span></span><span class="z-meta z-function-call z-c++"></span><span class="z-meta z-function-call z-c++"><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-end z-c++">)</span></span></span></span></span><span class="z-meta z-function-call z-c++"><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-end z-c++">)</span></span></span><span class="z-punctuation z-terminator z-c++">;</span>
+</span></span></span></span></span><span class="z-source z-c++"><span class="z-meta z-struct z-c++"><span class="z-meta z-block z-c++"><span class="z-meta z-method z-c++"><span class="z-meta z-block z-c++">    <span class="z-meta z-function-call z-c++"><span class="z-variable z-function z-c++">populateWithGenerated</span><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-begin z-c++">(</span></span></span><span class="z-meta z-function-call z-c++"><span class="z-meta z-group z-c++">patterns</span></span><span class="z-meta z-function-call z-c++"><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-end z-c++">)</span></span></span><span class="z-punctuation z-terminator z-c++">;</span>
+</span></span></span></span></span><span class="z-source z-c++"><span class="z-meta z-struct z-c++"><span class="z-meta z-block z-c++"><span class="z-meta z-method z-c++"><span class="z-meta z-block z-c++">    <span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-begin z-c++">(</span><span class="z-storage z-type z-c">void</span><span class="z-punctuation z-section z-group z-end z-c++">)</span></span><span class="z-meta z-function-call z-c++"><span class="z-variable z-function z-c++">applyPatternsAndFoldGreedily</span><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-begin z-c++">(</span></span></span><span class="z-meta z-function-call z-c++"><span class="z-meta z-group z-c++"><span class="z-meta z-function-call z-c++"><span class="z-variable z-function z-c++">getOperation</span><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-begin z-c++">(</span></span></span><span class="z-meta z-function-call z-c++"></span><span class="z-meta z-function-call z-c++"><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-end z-c++">)</span></span></span><span class="z-punctuation z-separator z-c++">,</span> <span class="z-meta z-function-call z-c++">std<span class="z-punctuation z-accessor z-double-colon z-c++">::</span><span class="z-variable z-function z-c++">move</span><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-begin z-c++">(</span></span></span><span class="z-meta z-function-call z-c++"><span class="z-meta z-group z-c++">patterns</span></span><span class="z-meta z-function-call z-c++"><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-end z-c++">)</span></span></span></span></span><span class="z-meta z-function-call z-c++"><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-end z-c++">)</span></span></span><span class="z-punctuation z-terminator z-c++">;</span>
+</span></span></span></span></span><span class="z-source z-c++"><span class="z-meta z-struct z-c++"><span class="z-meta z-block z-c++"><span class="z-meta z-method z-c++"><span class="z-meta z-block z-c++">  </span></span><span class="z-meta z-method z-c++"><span class="z-meta z-block z-c++"><span class="z-punctuation z-section z-block z-end z-c++">}</span></span></span>
+</span></span></span><span class="z-source z-c++"><span class="z-meta z-struct z-c++"><span class="z-meta z-block z-c++"></span></span><span class="z-meta z-struct z-c++"><span class="z-meta z-block z-c++"><span class="z-punctuation z-section z-block z-end z-c++">}</span></span></span><span class="z-punctuation z-terminator z-c++">;</span>
+</span></code></pre>
+<hr />
+<h2 id="4-related-work-and-analogues">4. Related Work and Analogues<a class="zola-anchor" href="#4-related-work-and-analogues" aria-label="Anchor link for: 4-related-work-and-analogues" style="visibility: hidden;"></a>
+</h2>
+<h3 id="a-compilers-as-databases">a. Compilers as Databases<a class="zola-anchor" href="#a-compilers-as-databases" aria-label="Anchor link for: a-compilers-as-databases" style="visibility: hidden;"></a>
+</h3>
+<ul>
+<li><strong>Martin Odersky (Scala creator)</strong>: described compilers as <em>in-memory databases</em> that store program facts and derive new ones.</li>
+<li><strong>Reddit/HackerNews discussions</strong>: reinforce the view of compilers as structured data systems that can be queried and transformed.</li>
+</ul>
+<h3 id="b-mlir-research">b. MLIR Research<a class="zola-anchor" href="#b-mlir-research" aria-label="Anchor link for: b-mlir-research" style="visibility: hidden;"></a>
+</h3>
+<ul>
+<li><strong>MLIR LangRef:</strong> describes the IR as a <em>graph of operations and values</em>.</li>
+<li><strong>MLIR for Graph Algorithms (LLVM Doc):</strong> formalizes MLIR as a graph manipulation substrate.</li>
+<li><strong>Relational MLIR Dialects:</strong> academic work modeling <em>relational algebra</em> as MLIR dialects for query optimization (e.g., PVLDB 2022, Jungmair et al.).</li>
+<li><strong>Equality Saturation (Egg/MLIR integration):</strong> uses e-graphs (equivalence graphs) as rewrite databases for exploring all possible transformations simultaneously.</li>
+</ul>
+<h3 id="c-database-style-compilers">c. Database-style Compilers<a class="zola-anchor" href="#c-database-style-compilers" aria-label="Anchor link for: c-database-style-compilers" style="visibility: hidden;"></a>
+</h3>
+<ul>
+<li><strong>Soufflé Datalog Compiler:</strong> represents program facts as relations; transformations and analyses as queries.</li>
+<li><strong>Flix, QL, CodeQL:</strong> treat program analysis as querying a database of IR facts.</li>
+<li><strong>Egglog / E-graphs:</strong> treat rewrites as fact insertions and equivalence updates.</li>
+</ul>
+<hr />
+<h2 id="5-where-the-analogy-fails">5. Where the Analogy Fails<a class="zola-anchor" href="#5-where-the-analogy-fails" aria-label="Anchor link for: 5-where-the-analogy-fails" style="visibility: hidden;"></a>
+</h2>
+<p>While the <em>conceptual mapping</em> is strong, MLIR isn’t a literal database.</p>
+<table><thead><tr><th>Database Property</th><th>MLIR Reality</th><th>Why it breaks</th></tr></thead><tbody>
+<tr><td><strong>Persistence &amp; durability (ACID)</strong></td><td>In-memory IR, no transaction logs</td><td>MLIR rewrites are ephemeral and non-rollbackable.</td></tr>
+<tr><td><strong>Relational query language</strong></td><td>No general SQL/Datalog layer</td><td>Rewrites are specialized, not general-purpose.</td></tr>
+<tr><td><strong>Concurrency &amp; isolation</strong></td><td>Single-threaded mutation</td><td>No multi-user or concurrent transactions.</td></tr>
+<tr><td><strong>Indexing and query optimization</strong></td><td>Manual traversal</td><td>Pattern matching is structural, not cost-based.</td></tr>
+<tr><td><strong>General data model</strong></td><td>Program IR only</td><td>Can’t represent arbitrary user data.</td></tr>
+</tbody></table>
+<p>So the analogy fails when expecting full DBMS features. MLIR is <em>database-like</em> in structure and semantics, not in engineering.</p>
+<hr />
+<h2 id="6-why-the-analogy-still-matters">6. Why the Analogy Still Matters<a class="zola-anchor" href="#6-why-the-analogy-still-matters" aria-label="Anchor link for: 6-why-the-analogy-still-matters" style="visibility: hidden;"></a>
+</h2>
+<p>Despite its limits, the framing of MLIR as a <em>graph database of program operations</em> is:</p>
+<ul>
+<li><strong>Pedagogically powerful:</strong> clarifies dialects as schemas, rewrites as queries, and passes as engines.</li>
+<li><strong>Architecturally descriptive:</strong> explains why MLIR scales — modular schemas, composable transformations, structured consistency.</li>
+<li><strong>Future-oriented:</strong> MLIR could evolve toward persistent or incremental IR stores, especially for IDEs or incremental compilers.</li>
+</ul>
+<p>In short:</p>
+<blockquote>
+<p>MLIR bridges compiler theory and data systems. Thinking of it as a <em>rewritable graph database</em> highlights how its modular, queryable, schema-driven architecture goes beyond a traditional IR graph.</p>
+</blockquote>
+<hr />
+<h2 id="7-key-references">7. Key References<a class="zola-anchor" href="#7-key-references" aria-label="Anchor link for: 7-key-references" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li><a rel="nofollow noreferrer" href="https://mlir.llvm.org/docs/LangRef/">MLIR LangRef – Structure of IR</a></li>
+<li><a rel="nofollow noreferrer" href="https://mlir.llvm.org/docs/Rationale/MLIRForGraphAlgorithms/">MLIR for Graph Algorithms (LLVM Rationale Doc)</a></li>
+<li><a rel="nofollow noreferrer" href="https://www.vldb.org/pvldb/vol15/p2389-jungmair.pdf">PVLDB 2022 – "An MLIR Dialect for Relational Algebra"</a></li>
+<li><a rel="nofollow noreferrer" href="https://egraphs-good.github.io/">Egg and Equality Saturation</a></li>
+<li><a rel="nofollow noreferrer" href="https://souffle-lang.github.io/">Soufflé Datalog Compiler</a></li>
+<li><a rel="nofollow noreferrer" href="https://news.ycombinator.com/item?id=10037971">Martin Odersky – Compilers as Databases (Talk summary)</a></li>
+</ul>
+<hr />
+<p><strong>TL;DR:</strong></p>
+<blockquote>
+<p>MLIR is not just a graph of operations — it’s a typed, schema-driven, queryable <em>graph database</em> for program transformations. Dialects define the schema, rewrites define the queries, and passes execute them to evolve the IR toward hardware or optimized form.</p>
+</blockquote>
+
+      </article>
+
+      
+      
+
+      
+      
+    </div>
+
+    
+
+
+<footer>
+  <div class="left">
+    <div class="copyright">
+      © 2025 &lt;joseph bak&gt;
+      
+      <span>|</span>
+      Built with <a href="https://www.getzola.org" rel="noreferrer" target="_blank">zola</a> and <a href="https://github.com/isunjn/serene" rel="noreferrer" target="_blank">serene</a>
+      
+    </div>
+  </div>
+
+  <div class="right">
+    
+    
+      
+    
+    
+    <a id="rss-btn" href="https://josephbak.github.io/posts/feed.xml">RSS</a>
+    
+    
+
+    
+    
+    
+    <button id="theme-toggle" aria-label="theme switch">
+      <span class="moon-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M10 7C10 10.866 13.134 14 17 14C18.9584 14 20.729 13.1957 21.9995 11.8995C22 11.933 22 11.9665 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C12.0335 2 12.067 2 12.1005 2.00049C10.8043 3.27098 10 5.04157 10 7ZM4 12C4 16.4183 7.58172 20 12 20C15.0583 20 17.7158 18.2839 19.062 15.7621C18.3945 15.9187 17.7035 16 17 16C12.0294 16 8 11.9706 8 7C8 6.29648 8.08133 5.60547 8.2379 4.938C5.71611 6.28423 4 8.9417 4 12Z" fill="currentColor"></path></svg>
+</span>
+      <span class="sun-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M12 18C8.68629 18 6 15.3137 6 12C6 8.68629 8.68629 6 12 6C15.3137 6 18 8.68629 18 12C18 15.3137 15.3137 18 12 18ZM12 16C14.2091 16 16 14.2091 16 12C16 9.79086 14.2091 8 12 8C9.79086 8 8 9.79086 8 12C8 14.2091 9.79086 16 12 16ZM11 1H13V4H11V1ZM11 20H13V23H11V20ZM3.51472 4.92893L4.92893 3.51472L7.05025 5.63604L5.63604 7.05025L3.51472 4.92893ZM16.9497 18.364L18.364 16.9497L20.4853 19.0711L19.0711 20.4853L16.9497 18.364ZM19.0711 3.51472L20.4853 4.92893L18.364 7.05025L16.9497 5.63604L19.0711 3.51472ZM5.63604 16.9497L7.05025 18.364L4.92893 20.4853L3.51472 19.0711L5.63604 16.9497ZM23 11V13H20V11H23ZM4 11V13H1V11H4Z" fill="currentColor"></path></svg>
+</span>
+    </button>
+    
+  </div>
+</footer>
+
+
+
+
+<dialog id="rss-mask">
+  <div>
+    <a href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml">https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml</a>
+    
+    
+    <button autofocus aria-label="copy" data-link="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z" fill="currentColor"></path></svg>
+
+    </button>
+  </div>
+</dialog>
+
+
+
+  </main>
+</div>
+
+  
+<script src="/js/lightense.min.js"></script>
+
+
+  <script src="https://josephbak.github.io/js/main.js"></script>
+</body>
+
+</html>

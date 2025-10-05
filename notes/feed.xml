@@ -5,9 +5,155 @@
 	<link rel="self" type="application/atom+xml" href="https://josephbak.github.io/notes/feed.xml"/>
   <link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/"/>
   
-	<updated>2025-10-03T00:00:00+00:00</updated>
+	<updated>2025-10-04T00:00:00+00:00</updated>
 	
 	<id>https://josephbak.github.io/notes/feed.xml</id>
+	<entry xml:lang="en">
+		<title>MLIR as a Rewritable Graph Database</title>
+		<published>2025-10-04T00:00:00+00:00</published>
+		<updated>2025-10-04T00:00:00+00:00</updated>
+		<link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/mlir-graph-db-analogy/"/>
+		<id>https://josephbak.github.io/notes/mlir-graph-db-analogy/</id>
+    
+		<content type="html" xml:base="https://josephbak.github.io/notes/mlir-graph-db-analogy/">&lt;h2 id=&quot;1-concept-overview&quot;&gt;1. Concept Overview&lt;a class=&quot;zola-anchor&quot; href=&quot;#1-concept-overview&quot; aria-label=&quot;Anchor link for: 1-concept-overview&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;&lt;strong&gt;MLIR (Multi-Level Intermediate Representation)&lt;&#x2F;strong&gt; can be understood not just as a compiler IR framework, but as a &lt;em&gt;rewritable, typed graph database&lt;&#x2F;em&gt;.&lt;&#x2F;p&gt;
+&lt;p&gt;At its core, MLIR stores structured, typed, and interconnected data (operations and values) that can be &lt;strong&gt;queried, transformed, and restructured&lt;&#x2F;strong&gt; — just like a database manages records with schema and queries.&lt;&#x2F;p&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Database Concept&lt;&#x2F;th&gt;&lt;th&gt;MLIR Equivalent&lt;&#x2F;th&gt;&lt;th&gt;Description&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Schema&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Operation definitions (via TableGen)&lt;&#x2F;td&gt;&lt;td&gt;Define what nodes (ops) can exist and what fields (operands, attributes) they have.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Records&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Operation instances in IR&lt;&#x2F;td&gt;&lt;td&gt;Concrete nodes representing program fragments.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Query &#x2F; Update&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Rewrite patterns (DRR or C++)&lt;&#x2F;td&gt;&lt;td&gt;Declarative or imperative transformations on subsets of the IR graph.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Query Engine&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Pass manager &#x2F; pattern driver&lt;&#x2F;td&gt;&lt;td&gt;Executes rewrites efficiently, ensuring consistency and termination.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Materialized View&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;&lt;code&gt;.mlir&lt;&#x2F;code&gt; textual snapshot&lt;&#x2F;td&gt;&lt;td&gt;Human-readable dump of current IR database state.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;p&gt;So MLIR ≈ &lt;em&gt;a database of program operations&lt;&#x2F;em&gt;, where &lt;strong&gt;dialects&lt;&#x2F;strong&gt; define schemas, &lt;strong&gt;rewrites&lt;&#x2F;strong&gt; define queries&#x2F;updates, and &lt;strong&gt;passes&lt;&#x2F;strong&gt; execute those transformations.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;2-why-database-not-just-graph&quot;&gt;2. Why &quot;Database&quot;, Not Just &quot;Graph&quot;&lt;a class=&quot;zola-anchor&quot; href=&quot;#2-why-database-not-just-graph&quot; aria-label=&quot;Anchor link for: 2-why-database-not-just-graph&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;MLIR’s IR is a &lt;strong&gt;typed, modular, and queryable graph&lt;&#x2F;strong&gt;, not a raw untyped DAG (Directed Acyclic Graph). Here’s the key distinction:&lt;&#x2F;p&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Aspect&lt;&#x2F;th&gt;&lt;th&gt;Plain Graph&lt;&#x2F;th&gt;&lt;th&gt;MLIR as Graph Database&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Structure&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Unstructured nodes&#x2F;edges&lt;&#x2F;td&gt;&lt;td&gt;Nodes (ops) and edges (values) with rich typing.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Schema&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;None&lt;&#x2F;td&gt;&lt;td&gt;Defined in ODS&#x2F;TableGen dialects.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Queries&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Manual graph traversal&lt;&#x2F;td&gt;&lt;td&gt;Pattern-matching and rewrite rules.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Transactions&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Not defined&lt;&#x2F;td&gt;&lt;td&gt;PatternRewriter guarantees consistent state after rewrite.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Namespaces&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Flat&lt;&#x2F;td&gt;&lt;td&gt;Modular dialects (isolated schemas).&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Persistence&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Optional&lt;&#x2F;td&gt;&lt;td&gt;&lt;code&gt;.mlir&lt;&#x2F;code&gt; provides textual serialization.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;p&gt;Thus, the term &lt;em&gt;database&lt;&#x2F;em&gt; highlights the presence of:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Schema-driven structure&lt;&#x2F;strong&gt; (dialects + ops)&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Rule-driven updates&lt;&#x2F;strong&gt; (rewrites)&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Transaction-like consistency&lt;&#x2F;strong&gt; (rewrites maintain SSA, type, dominance)&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Query semantics&lt;&#x2F;strong&gt; (find + replace via patterns)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;3-the-core-mapping&quot;&gt;3. The Core Mapping&lt;a class=&quot;zola-anchor&quot; href=&quot;#3-the-core-mapping&quot; aria-label=&quot;Anchor link for: 3-the-core-mapping&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;ops-schema&quot;&gt;Ops = Schema&lt;a class=&quot;zola-anchor&quot; href=&quot;#ops-schema&quot; aria-label=&quot;Anchor link for: ops-schema&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;p&gt;Define what data (ops) can exist in the IR:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;tablegen&quot; class=&quot;language-tablegen z-code&quot;&gt;&lt;code class=&quot;language-tablegen&quot; data-lang=&quot;tablegen&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;def TFL_LeakyReluOp : TFL_Op&amp;lt;TFL_Dialect, &amp;quot;leaky_relu&amp;quot;, [NoMemoryEffect, SameValueType]&amp;gt; {
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  let arguments = (ins F32Tensor:$x, F32Attr:$alpha);
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  let results   = (outs F32Tensor:$y);
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;}
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;This is analogous to:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sql&quot; class=&quot;language-sql z-code&quot;&gt;&lt;code class=&quot;language-sql&quot; data-lang=&quot;sql&quot;&gt;&lt;span class=&quot;z-source z-sql&quot;&gt;&lt;span class=&quot;z-meta z-create z-sql&quot;&gt;&lt;span class=&quot;z-keyword z-other z-create z-sql&quot;&gt;CREATE&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-other z-sql&quot;&gt;TABLE&lt;&#x2F;span&gt; &lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-toc-list z-full-identifier z-sql&quot;&gt;&lt;span class=&quot;z-entity z-name z-function z-sql&quot;&gt;LeakyRelu&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; (x FLOAT, alpha FLOAT, y FLOAT);
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Each operation instance is a &lt;em&gt;record&lt;&#x2F;em&gt; conforming to this schema.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;patterns-rewrite-rules&quot;&gt;Patterns = Rewrite Rules&lt;a class=&quot;zola-anchor&quot; href=&quot;#patterns-rewrite-rules&quot; aria-label=&quot;Anchor link for: patterns-rewrite-rules&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;p&gt;Declarative DRR or imperative C++ patterns are like database &lt;em&gt;update queries&lt;&#x2F;em&gt;:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;tablegen&quot; class=&quot;language-tablegen z-code&quot;&gt;&lt;code class=&quot;language-tablegen&quot; data-lang=&quot;tablegen&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;def : Pat&amp;lt;(TF_LeakyReluOp $x, F32Attr:$a), (TFL_LeakyReluOp $x, $a)&amp;gt;;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Equivalent to:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sql&quot; class=&quot;language-sql z-code&quot;&gt;&lt;code class=&quot;language-sql&quot; data-lang=&quot;sql&quot;&gt;&lt;span class=&quot;z-source z-sql&quot;&gt;&lt;span class=&quot;z-keyword z-other z-DML z-sql&quot;&gt;UPDATE&lt;&#x2F;span&gt; ops &lt;span class=&quot;z-keyword z-other z-DML z-sql&quot;&gt;SET&lt;&#x2F;span&gt; dialect &lt;span class=&quot;z-keyword z-operator z-comparison z-sql&quot;&gt;=&lt;&#x2F;span&gt; &lt;span class=&quot;z-string z-quoted z-single z-sql&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-sql&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;tfl&lt;span class=&quot;z-punctuation z-definition z-string z-end z-sql&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-other z-DML z-sql&quot;&gt;WHERE&lt;&#x2F;span&gt; op &lt;span class=&quot;z-keyword z-operator z-comparison z-sql&quot;&gt;=&lt;&#x2F;span&gt; &lt;span class=&quot;z-string z-quoted z-single z-sql&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-sql&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;tf.LeakyRelu&lt;span class=&quot;z-punctuation z-definition z-string z-end z-sql&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;They match subgraphs and replace them with new equivalent forms.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;passes-query-engine&quot;&gt;Passes = Query Engine&lt;a class=&quot;zola-anchor&quot; href=&quot;#passes-query-engine&quot; aria-label=&quot;Anchor link for: passes-query-engine&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;p&gt;Passes orchestrate which rewrites run and in what order:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Apply rewrites until fixpoint (no matches).&lt;&#x2F;li&gt;
+&lt;li&gt;Maintain consistency (SSA, type legality).&lt;&#x2F;li&gt;
+&lt;li&gt;Optimize or lower IR progressively.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Example:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;cpp&quot; class=&quot;language-cpp z-code&quot;&gt;&lt;code class=&quot;language-cpp&quot; data-lang=&quot;cpp&quot;&gt;&lt;span class=&quot;z-source z-c++&quot;&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-storage z-type z-c++&quot;&gt;struct&lt;&#x2F;span&gt; &lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-entity z-name z-struct z-c++&quot;&gt;LegalizeTFToTFLPass&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt; &lt;span class=&quot;z-punctuation z-separator z-c++&quot;&gt;:&lt;&#x2F;span&gt; &lt;span class=&quot;z-storage z-modifier z-c++&quot;&gt;public&lt;&#x2F;span&gt; &lt;span class=&quot;z-entity z-other z-inherited-class z-c++&quot;&gt;PassWrapper&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-generic z-begin z-c++&quot;&gt;&amp;lt;&lt;&#x2F;span&gt;LegalizeTFToTFLPass&lt;span class=&quot;z-punctuation z-separator z-c++&quot;&gt;,&lt;&#x2F;span&gt; OperationPass&lt;span class=&quot;z-punctuation z-section z-generic z-begin z-c++&quot;&gt;&amp;lt;&lt;&#x2F;span&gt;ModuleOp&lt;span class=&quot;z-punctuation z-section z-generic z-end z-c++&quot;&gt;&amp;gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-generic z-end z-c++&quot;&gt;&amp;gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-block z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-block z-begin z-c++&quot;&gt;{&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c++&quot;&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;  &lt;span class=&quot;z-storage z-type z-c&quot;&gt;void&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-method z-c++&quot;&gt;&lt;span class=&quot;z-entity z-name z-function z-c++&quot;&gt;runOnOperation&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-method z-parameters z-c++&quot;&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c++&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-method z-parameters z-c++&quot;&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c++&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-method z-c++&quot;&gt; &lt;span class=&quot;z-storage z-modifier z-c++&quot;&gt;override&lt;&#x2F;span&gt; &lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-method z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-block z-begin z-c++&quot;&gt;{&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-method z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c++&quot;&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;&lt;span class=&quot;z-meta z-method z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;    RewritePatternSet &lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-variable z-function z-c++&quot;&gt;patterns&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c++&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-keyword z-operator z-c&quot;&gt;&amp;amp;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-variable z-function z-c++&quot;&gt;getContext&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c++&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c++&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c++&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c++&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c++&quot;&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;&lt;span class=&quot;z-meta z-method z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-variable z-function z-c++&quot;&gt;populateWithGenerated&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c++&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;patterns&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c++&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c++&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c++&quot;&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;&lt;span class=&quot;z-meta z-method z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;    &lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c++&quot;&gt;(&lt;&#x2F;span&gt;&lt;span class=&quot;z-storage z-type z-c&quot;&gt;void&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c++&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-variable z-function z-c++&quot;&gt;applyPatternsAndFoldGreedily&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c++&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-variable z-function z-c++&quot;&gt;getOperation&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c++&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c++&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c++&quot;&gt;,&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;std&lt;span class=&quot;z-punctuation z-accessor z-double-colon z-c++&quot;&gt;::&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-function z-c++&quot;&gt;move&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c++&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;patterns&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c++&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c++&quot;&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c++&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c++&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c++&quot;&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;&lt;span class=&quot;z-meta z-method z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;  &lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-method z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-block z-end z-c++&quot;&gt;}&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c++&quot;&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-block z-end z-c++&quot;&gt;}&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c++&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;4-related-work-and-analogues&quot;&gt;4. Related Work and Analogues&lt;a class=&quot;zola-anchor&quot; href=&quot;#4-related-work-and-analogues&quot; aria-label=&quot;Anchor link for: 4-related-work-and-analogues&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;a-compilers-as-databases&quot;&gt;a. Compilers as Databases&lt;a class=&quot;zola-anchor&quot; href=&quot;#a-compilers-as-databases&quot; aria-label=&quot;Anchor link for: a-compilers-as-databases&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Martin Odersky (Scala creator)&lt;&#x2F;strong&gt;: described compilers as &lt;em&gt;in-memory databases&lt;&#x2F;em&gt; that store program facts and derive new ones.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Reddit&#x2F;HackerNews discussions&lt;&#x2F;strong&gt;: reinforce the view of compilers as structured data systems that can be queried and transformed.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;b-mlir-research&quot;&gt;b. MLIR Research&lt;a class=&quot;zola-anchor&quot; href=&quot;#b-mlir-research&quot; aria-label=&quot;Anchor link for: b-mlir-research&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;MLIR LangRef:&lt;&#x2F;strong&gt; describes the IR as a &lt;em&gt;graph of operations and values&lt;&#x2F;em&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;MLIR for Graph Algorithms (LLVM Doc):&lt;&#x2F;strong&gt; formalizes MLIR as a graph manipulation substrate.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Relational MLIR Dialects:&lt;&#x2F;strong&gt; academic work modeling &lt;em&gt;relational algebra&lt;&#x2F;em&gt; as MLIR dialects for query optimization (e.g., PVLDB 2022, Jungmair et al.).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Equality Saturation (Egg&#x2F;MLIR integration):&lt;&#x2F;strong&gt; uses e-graphs (equivalence graphs) as rewrite databases for exploring all possible transformations simultaneously.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;c-database-style-compilers&quot;&gt;c. Database-style Compilers&lt;a class=&quot;zola-anchor&quot; href=&quot;#c-database-style-compilers&quot; aria-label=&quot;Anchor link for: c-database-style-compilers&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Soufflé Datalog Compiler:&lt;&#x2F;strong&gt; represents program facts as relations; transformations and analyses as queries.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Flix, QL, CodeQL:&lt;&#x2F;strong&gt; treat program analysis as querying a database of IR facts.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Egglog &#x2F; E-graphs:&lt;&#x2F;strong&gt; treat rewrites as fact insertions and equivalence updates.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;5-where-the-analogy-fails&quot;&gt;5. Where the Analogy Fails&lt;a class=&quot;zola-anchor&quot; href=&quot;#5-where-the-analogy-fails&quot; aria-label=&quot;Anchor link for: 5-where-the-analogy-fails&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;While the &lt;em&gt;conceptual mapping&lt;&#x2F;em&gt; is strong, MLIR isn’t a literal database.&lt;&#x2F;p&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Database Property&lt;&#x2F;th&gt;&lt;th&gt;MLIR Reality&lt;&#x2F;th&gt;&lt;th&gt;Why it breaks&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Persistence &amp;amp; durability (ACID)&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;In-memory IR, no transaction logs&lt;&#x2F;td&gt;&lt;td&gt;MLIR rewrites are ephemeral and non-rollbackable.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Relational query language&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;No general SQL&#x2F;Datalog layer&lt;&#x2F;td&gt;&lt;td&gt;Rewrites are specialized, not general-purpose.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Concurrency &amp;amp; isolation&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Single-threaded mutation&lt;&#x2F;td&gt;&lt;td&gt;No multi-user or concurrent transactions.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Indexing and query optimization&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Manual traversal&lt;&#x2F;td&gt;&lt;td&gt;Pattern matching is structural, not cost-based.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;General data model&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Program IR only&lt;&#x2F;td&gt;&lt;td&gt;Can’t represent arbitrary user data.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;p&gt;So the analogy fails when expecting full DBMS features. MLIR is &lt;em&gt;database-like&lt;&#x2F;em&gt; in structure and semantics, not in engineering.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;6-why-the-analogy-still-matters&quot;&gt;6. Why the Analogy Still Matters&lt;a class=&quot;zola-anchor&quot; href=&quot;#6-why-the-analogy-still-matters&quot; aria-label=&quot;Anchor link for: 6-why-the-analogy-still-matters&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Despite its limits, the framing of MLIR as a &lt;em&gt;graph database of program operations&lt;&#x2F;em&gt; is:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Pedagogically powerful:&lt;&#x2F;strong&gt; clarifies dialects as schemas, rewrites as queries, and passes as engines.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Architecturally descriptive:&lt;&#x2F;strong&gt; explains why MLIR scales — modular schemas, composable transformations, structured consistency.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Future-oriented:&lt;&#x2F;strong&gt; MLIR could evolve toward persistent or incremental IR stores, especially for IDEs or incremental compilers.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;In short:&lt;&#x2F;p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;MLIR bridges compiler theory and data systems. Thinking of it as a &lt;em&gt;rewritable graph database&lt;&#x2F;em&gt; highlights how its modular, queryable, schema-driven architecture goes beyond a traditional IR graph.&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;7-key-references&quot;&gt;7. Key References&lt;a class=&quot;zola-anchor&quot; href=&quot;#7-key-references&quot; aria-label=&quot;Anchor link for: 7-key-references&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a rel=&quot;nofollow noreferrer&quot; href=&quot;https:&#x2F;&#x2F;mlir.llvm.org&#x2F;docs&#x2F;LangRef&#x2F;&quot;&gt;MLIR LangRef – Structure of IR&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a rel=&quot;nofollow noreferrer&quot; href=&quot;https:&#x2F;&#x2F;mlir.llvm.org&#x2F;docs&#x2F;Rationale&#x2F;MLIRForGraphAlgorithms&#x2F;&quot;&gt;MLIR for Graph Algorithms (LLVM Rationale Doc)&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a rel=&quot;nofollow noreferrer&quot; href=&quot;https:&#x2F;&#x2F;www.vldb.org&#x2F;pvldb&#x2F;vol15&#x2F;p2389-jungmair.pdf&quot;&gt;PVLDB 2022 – &quot;An MLIR Dialect for Relational Algebra&quot;&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a rel=&quot;nofollow noreferrer&quot; href=&quot;https:&#x2F;&#x2F;egraphs-good.github.io&#x2F;&quot;&gt;Egg and Equality Saturation&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a rel=&quot;nofollow noreferrer&quot; href=&quot;https:&#x2F;&#x2F;souffle-lang.github.io&#x2F;&quot;&gt;Soufflé Datalog Compiler&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a rel=&quot;nofollow noreferrer&quot; href=&quot;https:&#x2F;&#x2F;news.ycombinator.com&#x2F;item?id=10037971&quot;&gt;Martin Odersky – Compilers as Databases (Talk summary)&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;p&gt;&lt;strong&gt;TL;DR:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;MLIR is not just a graph of operations — it’s a typed, schema-driven, queryable &lt;em&gt;graph database&lt;&#x2F;em&gt; for program transformations. Dialects define the schema, rewrites define the queries, and passes execute them to evolve the IR toward hardware or optimized form.&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+</content>
+	</entry>
 	<entry xml:lang="en">
 		<title>Evolution of Branch Prediction and Its Parallels with SSA → SSI</title>
 		<published>2025-10-03T00:00:00+00:00</published>
