@@ -109,7 +109,7 @@ The alignment requirement \( \text{alignof}(T) \) is a compile-time constant dep
 
 ## Over-Alignment
 
-Manual over-alignment is declared using `alignas(N)`. It enforces that the object’s address is a multiple of \( N \). Example:
+Manual over-alignment is declared using `alignas(N)`. It enforces that the object’s address is a multiple of $ N $. Example:
 
 ```cpp
 struct alignas(64) Vec4 {
@@ -182,7 +182,7 @@ No restriction: alignment = 1
 2. Misaligned loads or stores can incur penalties or hardware traps.  
 3. $ \text{alignof}(T) $ defines the minimum alignment for a type.  
 4. `alignas(N)` allows manual over-alignment beyond natural alignment.  
-5. The compiler ensures $ \text{alignof}(T) \leq \text{hardware\_max\_alignment} $.  
+5. The compiler ensures $\text{alignof}(T) \leq \text{hardware\_max\_alignment}$.  
 
 ---
 
