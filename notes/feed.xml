@@ -5,9 +5,156 @@
 	<link rel="self" type="application/atom+xml" href="https://josephbak.github.io/notes/feed.xml"/>
   <link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/"/>
   
-	<updated>2025-10-07T00:00:00+00:00</updated>
+	<updated>2025-10-13T00:00:00+00:00</updated>
 	
 	<id>https://josephbak.github.io/notes/feed.xml</id>
+	<entry xml:lang="en">
+		<title>Memory Alignment and Hardware Constraints in C++</title>
+		<published>2025-10-13T00:00:00+00:00</published>
+		<updated>2025-10-13T00:00:00+00:00</updated>
+		<link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/memory-alignment-hardware-cpp/"/>
+		<id>https://josephbak.github.io/notes/memory-alignment-hardware-cpp/</id>
+    
+		<content type="html" xml:base="https://josephbak.github.io/notes/memory-alignment-hardware-cpp/">&lt;!-- KaTeX includes (inline; requires markdown.render_unsafe = true) --&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;katex.min.css&quot;&gt;
+&lt;script defer src=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;katex.min.js&quot;&gt;&lt;&#x2F;script&gt;
+&lt;script defer src=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;contrib&#x2F;auto-render.min.js&quot;&gt;&lt;&#x2F;script&gt;
+&lt;script&gt;
+ document.addEventListener(&quot;DOMContentLoaded&quot;, function() {
+ renderMathInElement(document.body, {
+ delimiters: [
+ {left: &quot;$$&quot;, right: &quot;$$&quot;, display: true},
+ {left: &quot;\\[&quot;, right: &quot;\\]&quot;, display: true},
+ {left: &quot;$&quot;, right: &quot;$&quot;, display: false},
+ {left: &quot;\\(&quot;, right: &quot;\\)&quot;, display: false}
+ ],
+ throwOnError: false
+ });
+ });
+&lt;&#x2F;script&gt;
+&lt;h2 id=&quot;overview&quot;&gt;Overview&lt;a class=&quot;zola-anchor&quot; href=&quot;#overview&quot; aria-label=&quot;Anchor link for: overview&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;This note presents a structured view of how memory alignment and hardware-level constraints interact with the C++ object model and compiler guarantees. It connects the requirements of modern hardware architectures with language-level semantics.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;memory-model&quot;&gt;Memory Model&lt;a class=&quot;zola-anchor&quot; href=&quot;#memory-model&quot; aria-label=&quot;Anchor link for: memory-model&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;C++ programs operate in a virtual memory space divided into regions for &lt;strong&gt;code&lt;&#x2F;strong&gt;, &lt;strong&gt;static data&lt;&#x2F;strong&gt;, &lt;strong&gt;stack&lt;&#x2F;strong&gt;, and &lt;strong&gt;heap&lt;&#x2F;strong&gt;. Dynamic allocation (&lt;code&gt;new&lt;&#x2F;code&gt;, &lt;code&gt;malloc&lt;&#x2F;code&gt;) reserves space on the heap, returning a pointer satisfying platform alignment guarantees.&lt;&#x2F;p&gt;
+&lt;p&gt;Each allocation unit is defined in &lt;strong&gt;bytes&lt;&#x2F;strong&gt;. For example:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;cpp&quot; class=&quot;language-cpp z-code&quot;&gt;&lt;code class=&quot;language-cpp&quot; data-lang=&quot;cpp&quot;&gt;&lt;span class=&quot;z-source z-c++&quot;&gt;&lt;span class=&quot;z-storage z-type z-c&quot;&gt;unsigned&lt;&#x2F;span&gt; &lt;span class=&quot;z-storage z-type z-c&quot;&gt;char&lt;&#x2F;span&gt;&lt;span class=&quot;z-keyword z-operator z-c++&quot;&gt;*&lt;&#x2F;span&gt; buffer &lt;span class=&quot;z-keyword z-operator z-assignment z-c&quot;&gt;=&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-control z-c++&quot;&gt;new&lt;&#x2F;span&gt; &lt;span class=&quot;z-storage z-type z-c&quot;&gt;unsigned&lt;&#x2F;span&gt; &lt;span class=&quot;z-storage z-type z-c&quot;&gt;char&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-brackets z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c++&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c++&quot;&gt;1024&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c++&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c++&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;The returned address obeys &lt;code&gt;alignof(std::max_align_t)&lt;&#x2F;code&gt;, typically 8 or 16 bytes on 64-bit systems.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;alignment-definition&quot;&gt;Alignment Definition&lt;a class=&quot;zola-anchor&quot; href=&quot;#alignment-definition&quot; aria-label=&quot;Anchor link for: alignment-definition&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Let an address $ A $ and alignment $ k \in \mathbb{N} $.&lt;br &#x2F;&gt;
+$ A $ is &lt;em&gt;k-aligned&lt;&#x2F;em&gt; if and only if&lt;&#x2F;p&gt;
+&lt;p&gt;$$
+A \bmod k = 0.
+$$&lt;&#x2F;p&gt;
+&lt;p&gt;Alignment ensures that the address of an object satisfies the boundary constraints required by the underlying hardware.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;hardware-considerations&quot;&gt;Hardware Considerations&lt;a class=&quot;zola-anchor&quot; href=&quot;#hardware-considerations&quot; aria-label=&quot;Anchor link for: hardware-considerations&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Processors read and write memory through buses that operate on fixed-size chunks. These transfer units determine the natural alignment requirements.&lt;&#x2F;p&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Level&lt;&#x2F;th&gt;&lt;th&gt;Typical Width&lt;&#x2F;th&gt;&lt;th&gt;Function&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;Register&lt;&#x2F;td&gt;&lt;td&gt;8–64 B&lt;&#x2F;td&gt;&lt;td&gt;Data path width for arithmetic units&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;Bus Transaction&lt;&#x2F;td&gt;&lt;td&gt;8–16 B&lt;&#x2F;td&gt;&lt;td&gt;Transfer width between cache and memory&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;Cache Line&lt;&#x2F;td&gt;&lt;td&gt;64 B&lt;&#x2F;td&gt;&lt;td&gt;Unit of cache coherence&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;Page&lt;&#x2F;td&gt;&lt;td&gt;4 KiB&lt;&#x2F;td&gt;&lt;td&gt;Virtual memory mapping granularity&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;p&gt;If an object crosses one of these boundaries, multiple transfers or traps may occur.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;misalignment&quot;&gt;Misalignment&lt;a class=&quot;zola-anchor&quot; href=&quot;#misalignment&quot; aria-label=&quot;Anchor link for: misalignment&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;A misaligned access occurs when the address of a load or store does not satisfy its alignment. Its effect is architecture-dependent.&lt;&#x2F;p&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Architecture&lt;&#x2F;th&gt;&lt;th&gt;Behavior&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;x86-64&lt;&#x2F;td&gt;&lt;td&gt;Permitted, slower due to split transactions&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;ARM64&lt;&#x2F;td&gt;&lt;td&gt;Traps (&lt;code&gt;SIGBUS&lt;&#x2F;code&gt;)&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;RISC-V&lt;&#x2F;td&gt;&lt;td&gt;Optional trap or emulation&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;p&gt;Aligned access guarantees that a load&#x2F;store fits entirely within one bus transaction.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;c-language-rules&quot;&gt;C++ Language Rules&lt;a class=&quot;zola-anchor&quot; href=&quot;#c-language-rules&quot; aria-label=&quot;Anchor link for: c-language-rules&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;C++ enforces that every object’s address satisfies its alignment requirement:&lt;&#x2F;p&gt;
+&lt;p&gt;$$
+\text{address} \bmod \text{alignof}(T) = 0.
+$$&lt;&#x2F;p&gt;
+&lt;p&gt;The alignment requirement ( \text{alignof}(T) ) is a compile-time constant depending on the target ABI (Application Binary Interface).&lt;&#x2F;p&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Type&lt;&#x2F;th&gt;&lt;th&gt;&lt;code&gt;sizeof(T)&lt;&#x2F;code&gt;&lt;&#x2F;th&gt;&lt;th&gt;&lt;code&gt;alignof(T)&lt;&#x2F;code&gt;&lt;&#x2F;th&gt;&lt;th&gt;Notes&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;code&gt;char&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;td&gt;1&lt;&#x2F;td&gt;&lt;td&gt;1&lt;&#x2F;td&gt;&lt;td&gt;Always aligned&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;code&gt;int&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;td&gt;4&lt;&#x2F;td&gt;&lt;td&gt;4&lt;&#x2F;td&gt;&lt;td&gt;Matches word size&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;code&gt;double&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;td&gt;8&lt;&#x2F;td&gt;&lt;td&gt;8&lt;&#x2F;td&gt;&lt;td&gt;Matches bus width&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;code&gt;struct { char c; double d; }&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;td&gt;16&lt;&#x2F;td&gt;&lt;td&gt;8&lt;&#x2F;td&gt;&lt;td&gt;Padding inserted&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;code&gt;alignas(64) float v[8];&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;td&gt;32&lt;&#x2F;td&gt;&lt;td&gt;64&lt;&#x2F;td&gt;&lt;td&gt;Manual over-alignment&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;over-alignment&quot;&gt;Over-Alignment&lt;a class=&quot;zola-anchor&quot; href=&quot;#over-alignment&quot; aria-label=&quot;Anchor link for: over-alignment&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Manual over-alignment is declared using &lt;code&gt;alignas(N)&lt;&#x2F;code&gt;. It enforces that the object’s address is a multiple of ( N ). Example:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;cpp&quot; class=&quot;language-cpp z-code&quot;&gt;&lt;code class=&quot;language-cpp&quot; data-lang=&quot;cpp&quot;&gt;&lt;span class=&quot;z-source z-c++&quot;&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-storage z-type z-c++&quot;&gt;struct&lt;&#x2F;span&gt; &lt;span class=&quot;z-storage z-modifier z-c++&quot;&gt;alignas&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c++&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c++&quot;&gt;64&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c++&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-entity z-name z-struct z-c++&quot;&gt;Vec4&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt; &lt;span class=&quot;z-meta z-block z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-block z-begin z-c++&quot;&gt;{&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c++&quot;&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;    &lt;span class=&quot;z-storage z-type z-c&quot;&gt;float&lt;&#x2F;span&gt; data&lt;span class=&quot;z-meta z-brackets z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c++&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c++&quot;&gt;4&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c++&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c++&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c++&quot;&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-struct z-c++&quot;&gt;&lt;span class=&quot;z-meta z-block z-c++&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-block z-end z-c++&quot;&gt;}&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c++&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;h3 id=&quot;motivation&quot;&gt;Motivation&lt;a class=&quot;zola-anchor&quot; href=&quot;#motivation&quot; aria-label=&quot;Anchor link for: motivation&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;SIMD (Single Instruction Multiple Data) operations (AVX&#x2F;AVX-512)&lt;&#x2F;li&gt;
+&lt;li&gt;Cache-line isolation in concurrent programs&lt;&#x2F;li&gt;
+&lt;li&gt;DMA and accelerator interfaces requiring aligned buffers&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;If the requested alignment exceeds hardware capability, the compiler inserts sufficient padding to maintain correctness. This is a compile-time guarantee; performance behavior depends on the target architecture.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;relationship-between-size-and-alignment&quot;&gt;Relationship Between Size and Alignment&lt;a class=&quot;zola-anchor&quot; href=&quot;#relationship-between-size-and-alignment&quot; aria-label=&quot;Anchor link for: relationship-between-size-and-alignment&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;$$
+\text{alignof}(T) \leq \text{sizeof}(T).
+$$&lt;&#x2F;p&gt;
+&lt;p&gt;Equality is common for primitive types. Structs and arrays may have $ \text{alignof}(T) &amp;lt; \text{sizeof}(T) $ due to internal padding. The C++ standard only enforces address correctness, not divisibility between size and alignment.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;misalignment-visualization&quot;&gt;Misalignment Visualization&lt;a class=&quot;zola-anchor&quot; href=&quot;#misalignment-visualization&quot; aria-label=&quot;Anchor link for: misalignment-visualization&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;proper-alignment-8-byte-double&quot;&gt;Proper Alignment (8-byte &lt;code&gt;double&lt;&#x2F;code&gt;)&lt;a class=&quot;zola-anchor&quot; href=&quot;#proper-alignment-8-byte-double&quot; aria-label=&quot;Anchor link for: proper-alignment-8-byte-double&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Bus boundary: ─────────┬────────┬────────
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;                       0x1000   0x1008   0x1010
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Aligned: [0x1008–0x100F] → one 8B transaction
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;h3 id=&quot;misalignment-starts-at-0x100a&quot;&gt;Misalignment (starts at 0x100A)&lt;a class=&quot;zola-anchor&quot; href=&quot;#misalignment-starts-at-0x100a&quot; aria-label=&quot;Anchor link for: misalignment-starts-at-0x100a&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Bus boundary: ─────────┬────────┬────────
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;                       0x1000   0x1008   0x1010
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Misaligned: [0x100A–0x1011] → spans two transactions
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;h3 id=&quot;byte-aligned-char&quot;&gt;Byte-Aligned (&lt;code&gt;char&lt;&#x2F;code&gt;)&lt;a class=&quot;zola-anchor&quot; href=&quot;#byte-aligned-char&quot; aria-label=&quot;Anchor link for: byte-aligned-char&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;No restriction: alignment = 1
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;key-properties&quot;&gt;Key Properties&lt;a class=&quot;zola-anchor&quot; href=&quot;#key-properties&quot; aria-label=&quot;Anchor link for: key-properties&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Concept&lt;&#x2F;th&gt;&lt;th&gt;Definition&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Alignment&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Boundary constraint on object address.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Size&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Number of bytes occupied by the object.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Natural alignment&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Alignment chosen automatically by the compiler.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Over-alignment&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;User-specified stronger boundary constraint.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Misalignment&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Address violating required boundary; undefined behavior.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Hardware constraint&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;The compiler never enforces alignment stricter than hardware support.&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;summary&quot;&gt;Summary&lt;a class=&quot;zola-anchor&quot; href=&quot;#summary&quot; aria-label=&quot;Anchor link for: summary&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ol&gt;
+&lt;li&gt;Alignment guarantees that memory accesses conform to hardware transfer boundaries.&lt;&#x2F;li&gt;
+&lt;li&gt;Misaligned loads or stores can incur penalties or hardware traps.&lt;&#x2F;li&gt;
+&lt;li&gt;$ \text{alignof}(T) $ defines the minimum alignment for a type.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;alignas(N)&lt;&#x2F;code&gt; allows manual over-alignment beyond natural alignment.&lt;&#x2F;li&gt;
+&lt;li&gt;The compiler ensures $ \text{alignof}(T) \leq \text{hardware_max_alignment} $.&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;hr &#x2F;&gt;
+&lt;p&gt;&lt;em&gt;This document provides a compact reference linking hardware design, compiler layout rules, and C++ alignment guarantees.&lt;&#x2F;em&gt;&lt;&#x2F;p&gt;
+</content>
+	</entry>
 	<entry xml:lang="en">
 		<title>Speculative Duplication and Cost Modeling in MLIR</title>
 		<published>2025-10-06T00:00:00+00:00</published>
