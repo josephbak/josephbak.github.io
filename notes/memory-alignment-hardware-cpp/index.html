@@ -307,7 +307,7 @@ $$</p>
 <hr />
 <h2 id="over-alignment">Over-Alignment<a class="zola-anchor" href="#over-alignment" aria-label="Anchor link for: over-alignment" style="visibility: hidden;"></a>
 </h2>
-<p>Manual over-alignment is declared using <code>alignas(N)</code>. It enforces that the object’s address is a multiple of ( N ). Example:</p>
+<p>Manual over-alignment is declared using <code>alignas(N)</code>. It enforces that the object’s address is a multiple of $ N $. Example:</p>
 <pre data-lang="cpp" class="language-cpp z-code"><code class="language-cpp" data-lang="cpp"><span class="z-source z-c++"><span class="z-meta z-struct z-c++"><span class="z-storage z-type z-c++">struct</span> <span class="z-storage z-modifier z-c++">alignas</span><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-begin z-c++">(</span></span><span class="z-meta z-group z-c++"><span class="z-constant z-numeric z-integer z-decimal z-c++">64</span></span><span class="z-meta z-group z-c++"><span class="z-punctuation z-section z-group z-end z-c++">)</span></span> </span><span class="z-meta z-struct z-c++"><span class="z-entity z-name z-struct z-c++">Vec4</span></span><span class="z-meta z-struct z-c++"> <span class="z-meta z-block z-c++"><span class="z-punctuation z-section z-block z-begin z-c++">{</span></span></span><span class="z-meta z-struct z-c++"><span class="z-meta z-block z-c++">
 </span></span></span><span class="z-source z-c++"><span class="z-meta z-struct z-c++"><span class="z-meta z-block z-c++">    <span class="z-storage z-type z-c">float</span> data<span class="z-meta z-brackets z-c++"><span class="z-punctuation z-section z-brackets z-begin z-c++">[</span><span class="z-constant z-numeric z-integer z-decimal z-c++">4</span><span class="z-punctuation z-section z-brackets z-end z-c++">]</span></span><span class="z-punctuation z-terminator z-c++">;</span>
 </span></span></span><span class="z-source z-c++"><span class="z-meta z-struct z-c++"><span class="z-meta z-block z-c++"></span></span><span class="z-meta z-struct z-c++"><span class="z-meta z-block z-c++"><span class="z-punctuation z-section z-block z-end z-c++">}</span></span></span><span class="z-punctuation z-terminator z-c++">;</span>
@@ -365,7 +365,7 @@ $$</p>
 <li>Misaligned loads or stores can incur penalties or hardware traps.</li>
 <li>$ \text{alignof}(T) $ defines the minimum alignment for a type.</li>
 <li><code>alignas(N)</code> allows manual over-alignment beyond natural alignment.</li>
-<li>The compiler ensures $ \text{alignof}(T) \leq \text{hardware_max_alignment} $.</li>
+<li>The compiler ensures $\text{alignof}(T) \leq \text{hardware_max_alignment}$.</li>
 </ol>
 <hr />
 <p><em>This document provides a compact reference linking hardware design, compiler layout rules, and C++ alignment guarantees.</em></p>
