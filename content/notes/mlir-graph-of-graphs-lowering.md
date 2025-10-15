@@ -120,8 +120,8 @@ Example pipeline:
 [MHLO Graph] --(P1)--> [Linalg Graph] --(P2)--> [LLVM Graph]
 ```
 
-- Nodes ($\mathcal{V}$): IR snapshots (entire program graphs)
-- Edges ($\mathcal{E}$): passes (transformations)
+- Nodes ($ \mathcal{V} $): IR snapshots (entire program graphs)
+- Edges ($ \mathcal{E} $): passes (transformations)
 
 The meta-graph is **directed and acyclic**, since lowering moves from high-level to low-level representations.
 
