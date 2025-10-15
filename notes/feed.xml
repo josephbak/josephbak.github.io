@@ -23,9 +23,9 @@
  document.addEventListener(&quot;DOMContentLoaded&quot;, function() {
  renderMathInElement(document.body, {
  delimiters: [
- {left: &quot;$$&quot;, right: &quot;$$&quot;, display: true},
+ {left: &quot;\$\$&quot;, right: &quot;\$\$&quot;, display: true},
  {left: &quot;\[&quot;, right: &quot;\]&quot;, display: true},
- {left: &quot;$&quot;, right: &quot;$&quot;, display: false},
+ {left: &quot;\(&quot;, right: &quot;\)&quot;, display: false},
  {left: &quot;\(&quot;, right: &quot;\)&quot;, display: false}
  ],
  throwOnError: false
@@ -37,8 +37,8 @@
 &lt;h2 id=&quot;tl-dr&quot;&gt;TL;DR&lt;a class=&quot;zola-anchor&quot; href=&quot;#tl-dr&quot; aria-label=&quot;Anchor link for: tl-dr&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
 &lt;&#x2F;h2&gt;
 &lt;ul&gt;
-&lt;li&gt;Every program in MLIR or LLVM IR can be represented as a &lt;strong&gt;computation graph&lt;&#x2F;strong&gt; $G = (V,E)$.&lt;&#x2F;li&gt;
-&lt;li&gt;Each &lt;strong&gt;compiler pass&lt;&#x2F;strong&gt; acts as a &lt;strong&gt;graph transformation&lt;&#x2F;strong&gt; $P_i: G_{i-1} \to G_i$.&lt;&#x2F;li&gt;
+&lt;li&gt;Every program in MLIR or LLVM IR can be represented as a &lt;strong&gt;computation graph&lt;&#x2F;strong&gt; (G = (V,E)).&lt;&#x2F;li&gt;
+&lt;li&gt;Each &lt;strong&gt;compiler pass&lt;&#x2F;strong&gt; acts as a &lt;strong&gt;graph transformation&lt;&#x2F;strong&gt; (P_i: G_{i-1} \to G_i).&lt;&#x2F;li&gt;
 &lt;li&gt;The entire &lt;strong&gt;pipeline&lt;&#x2F;strong&gt; is therefore a &lt;strong&gt;meta-graph&lt;&#x2F;strong&gt; (a directed graph whose nodes are IR graphs and edges are passes).&lt;&#x2F;li&gt;
 &lt;li&gt;Conceptually, compiler lowering is a &lt;strong&gt;graph of transformations over graphs of computation&lt;&#x2F;strong&gt;.&lt;&#x2F;li&gt;
 &lt;li&gt;This interpretation connects modern compiler design with &lt;strong&gt;graph rewriting systems&lt;&#x2F;strong&gt; and &lt;strong&gt;category theory&lt;&#x2F;strong&gt;.&lt;&#x2F;li&gt;
@@ -52,8 +52,8 @@ G_0 = (V_0, E_0)
 $$&lt;&#x2F;p&gt;
 &lt;p&gt;where:&lt;&#x2F;p&gt;
 &lt;ul&gt;
-&lt;li&gt;$V_0$: operations (e.g., &lt;code&gt;mhlo.add&lt;&#x2F;code&gt;, &lt;code&gt;mhlo.dot&lt;&#x2F;code&gt;, &lt;code&gt;linalg.matmul&lt;&#x2F;code&gt;)&lt;&#x2F;li&gt;
-&lt;li&gt;$E_0$: data dependencies (SSA edges)&lt;&#x2F;li&gt;
+&lt;li&gt;(V_0): operations (e.g., &lt;code&gt;mhlo.add&lt;&#x2F;code&gt;, &lt;code&gt;mhlo.dot&lt;&#x2F;code&gt;, &lt;code&gt;linalg.matmul&lt;&#x2F;code&gt;)&lt;&#x2F;li&gt;
+&lt;li&gt;(E_0): data dependencies (SSA edges)&lt;&#x2F;li&gt;
 &lt;&#x2F;ul&gt;
 &lt;p&gt;Example:&lt;&#x2F;p&gt;
 &lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   %x
@@ -78,8 +78,8 @@ P = (V_P, E_P)
 $$&lt;&#x2F;p&gt;
 &lt;p&gt;where:&lt;&#x2F;p&gt;
 &lt;ul&gt;
-&lt;li&gt;$V_P$: rewrite rules (pattern + replacement)&lt;&#x2F;li&gt;
-&lt;li&gt;$E_P$: dependencies among rules (e.g., one rewrite must precede another)&lt;&#x2F;li&gt;
+&lt;li&gt;(V_P): rewrite rules (pattern + replacement)&lt;&#x2F;li&gt;
+&lt;li&gt;(E_P): dependencies among rules (e.g., one rewrite must precede another)&lt;&#x2F;li&gt;
 &lt;&#x2F;ul&gt;
 &lt;p&gt;Example (MHLO → Linalg lowering):&lt;&#x2F;p&gt;
 &lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; Pass: mhlo → linalg
@@ -105,8 +105,8 @@ $$&lt;&#x2F;p&gt;
 &lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;[MHLO Graph] --(P1)--&amp;gt; [Linalg Graph] --(P2)--&amp;gt; [LLVM Graph]
 &lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
 &lt;ul&gt;
-&lt;li&gt;Nodes ($ \mathcal{V} $): IR snapshots (entire program graphs)&lt;&#x2F;li&gt;
-&lt;li&gt;Edges ($ \mathcal{E} $): passes (transformations)&lt;&#x2F;li&gt;
+&lt;li&gt;Nodes ((\mathcal{V})): IR snapshots (entire program graphs)&lt;&#x2F;li&gt;
+&lt;li&gt;Edges ((\mathcal{E})): passes (transformations)&lt;&#x2F;li&gt;
 &lt;&#x2F;ul&gt;
 &lt;p&gt;The meta-graph is &lt;strong&gt;directed and acyclic&lt;&#x2F;strong&gt;, since lowering moves from high-level to low-level representations.&lt;&#x2F;p&gt;
 &lt;hr &#x2F;&gt;
@@ -121,7 +121,7 @@ $$&lt;&#x2F;p&gt;
 &lt;hr &#x2F;&gt;
 &lt;h2 id=&quot;5-category-theoretic-view&quot;&gt;5) Category-Theoretic View&lt;a class=&quot;zola-anchor&quot; href=&quot;#5-category-theoretic-view&quot; aria-label=&quot;Anchor link for: 5-category-theoretic-view&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
 &lt;&#x2F;h2&gt;
-&lt;p&gt;Define a category $\mathcal{C}$ whose objects are IR graphs and whose morphisms are passes:&lt;&#x2F;p&gt;
+&lt;p&gt;Define a category (\mathcal{C}) whose objects are IR graphs and whose morphisms are passes:&lt;&#x2F;p&gt;
 &lt;p&gt;$$
 \text{Obj}(\mathcal{C}) = {G_i}, \quad
 \text{Mor}(\mathcal{C}) = {P_i: G_{i-1} \to G_i}
@@ -181,7 +181,7 @@ Models optimization as the saturation of a DAG of equivalent program graphs.&lt;
 &lt;&#x2F;li&gt;
 &lt;li&gt;
 &lt;p&gt;&lt;strong&gt;N. Lopes et al.&lt;&#x2F;strong&gt;, &lt;em&gt;Alive2: Bounded Translation Validation for LLVM&lt;&#x2F;em&gt;, arXiv:2004.04344.&lt;br &#x2F;&gt;
-Proves semantic equivalence between IR transformations, effectively linking graphs $G_i$ and $G_{i+1}$.&lt;&#x2F;p&gt;
+Proves semantic equivalence between IR transformations, effectively linking graphs (G_i) and (G_{i+1}).&lt;&#x2F;p&gt;
 &lt;&#x2F;li&gt;
 &lt;li&gt;
 &lt;p&gt;&lt;strong&gt;O. Kiselyov, J. Carette, C. Shan&lt;&#x2F;strong&gt;, &lt;em&gt;Compiling to Categories&lt;&#x2F;em&gt;, ICFP (2010).&lt;br &#x2F;&gt;
@@ -200,7 +200,7 @@ It is a &lt;strong&gt;hierarchical system of graph transformations&lt;&#x2F;stro
 &lt;p&gt;$$
 \mathcal{G} : G_0 \xrightarrow{P_1} G_1 \xrightarrow{P_2} \cdots \xrightarrow{P_n} G_n
 $$&lt;&#x2F;p&gt;
-&lt;p&gt;Each $G_i$ is an IR graph (computation), and each $P_i$ is a morphism (pass).&lt;br &#x2F;&gt;
+&lt;p&gt;Each (G_i) is an IR graph (computation), and each (P_i) is a morphism (pass).&lt;br &#x2F;&gt;
 This structure unifies compiler pipelines, graph rewriting systems, and categorical reasoning into a single framework for understanding how complex program transformations can be represented, optimized, and verified.&lt;&#x2F;p&gt;
 &lt;hr &#x2F;&gt;
 &lt;p&gt;&lt;strong&gt;Author:&lt;&#x2F;strong&gt; Joseph Bak&lt;br &#x2F;&gt;

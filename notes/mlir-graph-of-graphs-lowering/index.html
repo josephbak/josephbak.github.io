@@ -214,9 +214,9 @@
  document.addEventListener("DOMContentLoaded", function() {
  renderMathInElement(document.body, {
  delimiters: [
- {left: "$$", right: "$$", display: true},
+ {left: "\$\$", right: "\$\$", display: true},
  {left: "\[", right: "\]", display: true},
- {left: "$", right: "$", display: false},
+ {left: "\(", right: "\)", display: false},
  {left: "\(", right: "\)", display: false}
  ],
  throwOnError: false
@@ -228,8 +228,8 @@
 <h2 id="tl-dr">TL;DR<a class="zola-anchor" href="#tl-dr" aria-label="Anchor link for: tl-dr" style="visibility: hidden;"></a>
 </h2>
 <ul>
-<li>Every program in MLIR or LLVM IR can be represented as a <strong>computation graph</strong> $G = (V,E)$.</li>
-<li>Each <strong>compiler pass</strong> acts as a <strong>graph transformation</strong> $P_i: G_{i-1} \to G_i$.</li>
+<li>Every program in MLIR or LLVM IR can be represented as a <strong>computation graph</strong> (G = (V,E)).</li>
+<li>Each <strong>compiler pass</strong> acts as a <strong>graph transformation</strong> (P_i: G_{i-1} \to G_i).</li>
 <li>The entire <strong>pipeline</strong> is therefore a <strong>meta-graph</strong> (a directed graph whose nodes are IR graphs and edges are passes).</li>
 <li>Conceptually, compiler lowering is a <strong>graph of transformations over graphs of computation</strong>.</li>
 <li>This interpretation connects modern compiler design with <strong>graph rewriting systems</strong> and <strong>category theory</strong>.</li>
@@ -243,8 +243,8 @@ G_0 = (V_0, E_0)
 $$</p>
 <p>where:</p>
 <ul>
-<li>$V_0$: operations (e.g., <code>mhlo.add</code>, <code>mhlo.dot</code>, <code>linalg.matmul</code>)</li>
-<li>$E_0$: data dependencies (SSA edges)</li>
+<li>(V_0): operations (e.g., <code>mhlo.add</code>, <code>mhlo.dot</code>, <code>linalg.matmul</code>)</li>
+<li>(E_0): data dependencies (SSA edges)</li>
 </ul>
 <p>Example:</p>
 <pre class="z-code"><code><span class="z-text z-plain">   %x
@@ -269,8 +269,8 @@ P = (V_P, E_P)
 $$</p>
 <p>where:</p>
 <ul>
-<li>$V_P$: rewrite rules (pattern + replacement)</li>
-<li>$E_P$: dependencies among rules (e.g., one rewrite must precede another)</li>
+<li>(V_P): rewrite rules (pattern + replacement)</li>
+<li>(E_P): dependencies among rules (e.g., one rewrite must precede another)</li>
 </ul>
 <p>Example (MHLO → Linalg lowering):</p>
 <pre class="z-code"><code><span class="z-text z-plain"> Pass: mhlo → linalg
@@ -296,8 +296,8 @@ $$</p>
 <pre class="z-code"><code><span class="z-text z-plain">[MHLO Graph] --(P1)--&gt; [Linalg Graph] --(P2)--&gt; [LLVM Graph]
 </span></code></pre>
 <ul>
-<li>Nodes ($ \mathcal{V} $): IR snapshots (entire program graphs)</li>
-<li>Edges ($ \mathcal{E} $): passes (transformations)</li>
+<li>Nodes ((\mathcal{V})): IR snapshots (entire program graphs)</li>
+<li>Edges ((\mathcal{E})): passes (transformations)</li>
 </ul>
 <p>The meta-graph is <strong>directed and acyclic</strong>, since lowering moves from high-level to low-level representations.</p>
 <hr />
@@ -312,7 +312,7 @@ $$</p>
 <hr />
 <h2 id="5-category-theoretic-view">5) Category-Theoretic View<a class="zola-anchor" href="#5-category-theoretic-view" aria-label="Anchor link for: 5-category-theoretic-view" style="visibility: hidden;"></a>
 </h2>
-<p>Define a category $\mathcal{C}$ whose objects are IR graphs and whose morphisms are passes:</p>
+<p>Define a category (\mathcal{C}) whose objects are IR graphs and whose morphisms are passes:</p>
 <p>$$
 \text{Obj}(\mathcal{C}) = {G_i}, \quad
 \text{Mor}(\mathcal{C}) = {P_i: G_{i-1} \to G_i}
@@ -372,7 +372,7 @@ Models optimization as the saturation of a DAG of equivalent program graphs.</p>
 </li>
 <li>
 <p><strong>N. Lopes et al.</strong>, <em>Alive2: Bounded Translation Validation for LLVM</em>, arXiv:2004.04344.<br />
-Proves semantic equivalence between IR transformations, effectively linking graphs $G_i$ and $G_{i+1}$.</p>
+Proves semantic equivalence between IR transformations, effectively linking graphs (G_i) and (G_{i+1}).</p>
 </li>
 <li>
 <p><strong>O. Kiselyov, J. Carette, C. Shan</strong>, <em>Compiling to Categories</em>, ICFP (2010).<br />
@@ -391,7 +391,7 @@ It is a <strong>hierarchical system of graph transformations</strong>, where:</p
 <p>$$
 \mathcal{G} : G_0 \xrightarrow{P_1} G_1 \xrightarrow{P_2} \cdots \xrightarrow{P_n} G_n
 $$</p>
-<p>Each $G_i$ is an IR graph (computation), and each $P_i$ is a morphism (pass).<br />
+<p>Each (G_i) is an IR graph (computation), and each (P_i) is a morphism (pass).<br />
 This structure unifies compiler pipelines, graph rewriting systems, and categorical reasoning into a single framework for understanding how complex program transformations can be represented, optimized, and verified.</p>
 <hr />
 <p><strong>Author:</strong> Joseph Bak<br />
