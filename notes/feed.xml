@@ -5,9 +5,209 @@
 	<link rel="self" type="application/atom+xml" href="https://josephbak.github.io/notes/feed.xml"/>
   <link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/"/>
   
-	<updated>2025-10-13T00:00:00+00:00</updated>
+	<updated>2025-10-14T00:00:00+00:00</updated>
 	
 	<id>https://josephbak.github.io/notes/feed.xml</id>
+	<entry xml:lang="en">
+		<title>Lowering as Graph-of-Graphs: A Structural View of MLIR and LLVM Pipelines</title>
+		<published>2025-10-14T00:00:00+00:00</published>
+		<updated>2025-10-14T00:00:00+00:00</updated>
+		<link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/mlir-graph-of-graphs-lowering/"/>
+		<id>https://josephbak.github.io/notes/mlir-graph-of-graphs-lowering/</id>
+    
+		<content type="html" xml:base="https://josephbak.github.io/notes/mlir-graph-of-graphs-lowering/">&lt;!-- KaTeX includes (inline; requires markdown.render_unsafe = true) --&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;katex.min.css&quot;&gt;
+&lt;script defer src=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;katex.min.js&quot;&gt;&lt;&#x2F;script&gt;
+&lt;script defer src=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;contrib&#x2F;auto-render.min.js&quot;&gt;&lt;&#x2F;script&gt;
+&lt;script&gt;
+ document.addEventListener(&quot;DOMContentLoaded&quot;, function() {
+ renderMathInElement(document.body, {
+ delimiters: [
+ {left: &quot;$$&quot;, right: &quot;$$&quot;, display: true},
+ {left: &quot;\[&quot;, right: &quot;\]&quot;, display: true},
+ {left: &quot;$&quot;, right: &quot;$&quot;, display: false},
+ {left: &quot;\(&quot;, right: &quot;\)&quot;, display: false}
+ ],
+ throwOnError: false
+ });
+ });
+&lt;&#x2F;script&gt;
+&lt;p&gt;&lt;em&gt;A structural note on how the MLIR&#x2F;LLVM lowering process itself forms a higher-order computation graph — a graph of graph transformations.&lt;&#x2F;em&gt;&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;tl-dr&quot;&gt;TL;DR&lt;a class=&quot;zola-anchor&quot; href=&quot;#tl-dr&quot; aria-label=&quot;Anchor link for: tl-dr&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Every program in MLIR or LLVM IR can be represented as a &lt;strong&gt;computation graph&lt;&#x2F;strong&gt; $G = (V,E)$.&lt;&#x2F;li&gt;
+&lt;li&gt;Each &lt;strong&gt;compiler pass&lt;&#x2F;strong&gt; acts as a &lt;strong&gt;graph transformation&lt;&#x2F;strong&gt; $P_i: G_{i-1} \to G_i$.&lt;&#x2F;li&gt;
+&lt;li&gt;The entire &lt;strong&gt;pipeline&lt;&#x2F;strong&gt; is therefore a &lt;strong&gt;meta-graph&lt;&#x2F;strong&gt; (a directed graph whose nodes are IR graphs and edges are passes).&lt;&#x2F;li&gt;
+&lt;li&gt;Conceptually, compiler lowering is a &lt;strong&gt;graph of transformations over graphs of computation&lt;&#x2F;strong&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;This interpretation connects modern compiler design with &lt;strong&gt;graph rewriting systems&lt;&#x2F;strong&gt; and &lt;strong&gt;category theory&lt;&#x2F;strong&gt;.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;1-level-0-the-ir-graph-computation&quot;&gt;1) Level-0 — The IR Graph: Computation&lt;a class=&quot;zola-anchor&quot; href=&quot;#1-level-0-the-ir-graph-computation&quot; aria-label=&quot;Anchor link for: 1-level-0-the-ir-graph-computation&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;At the base level, a program is represented as a directed graph&lt;&#x2F;p&gt;
+&lt;p&gt;$$
+G_0 = (V_0, E_0)
+$$&lt;&#x2F;p&gt;
+&lt;p&gt;where:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;$V_0$: operations (e.g., &lt;code&gt;mhlo.add&lt;&#x2F;code&gt;, &lt;code&gt;mhlo.dot&lt;&#x2F;code&gt;, &lt;code&gt;linalg.matmul&lt;&#x2F;code&gt;)&lt;&#x2F;li&gt;
+&lt;li&gt;$E_0$: data dependencies (SSA edges)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Example:&lt;&#x2F;p&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   %x
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    │
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    ▼
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; mhlo.add
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    │
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    ▼
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; mhlo.relu
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    │
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    ▼
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; mhlo.return
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;This is the &lt;strong&gt;program graph&lt;&#x2F;strong&gt;—it captures what is computed, not how it is lowered.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;2-level-1-the-pass-graph-local-rewrite-structure&quot;&gt;2) Level-1 — The Pass Graph: Local Rewrite Structure&lt;a class=&quot;zola-anchor&quot; href=&quot;#2-level-1-the-pass-graph-local-rewrite-structure&quot; aria-label=&quot;Anchor link for: 2-level-1-the-pass-graph-local-rewrite-structure&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Each compiler pass applies a set of rewrite rules to subgraphs of the IR.&lt;&#x2F;p&gt;
+&lt;p&gt;Formally:
+$$
+P = (V_P, E_P)
+$$&lt;&#x2F;p&gt;
+&lt;p&gt;where:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;$V_P$: rewrite rules (pattern + replacement)&lt;&#x2F;li&gt;
+&lt;li&gt;$E_P$: dependencies among rules (e.g., one rewrite must precede another)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Example (MHLO → Linalg lowering):&lt;&#x2F;p&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; Pass: mhlo → linalg
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; ───────────────────
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; mhlo.add  ───→  linalg.add
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; mhlo.relu ───→  linalg.max
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;This graph represents the &lt;strong&gt;local transformation flow&lt;&#x2F;strong&gt; within a single pass.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;3-level-2-the-pipeline-meta-graph-graphs-of-graphs&quot;&gt;3) Level-2 — The Pipeline Meta-Graph: Graphs of Graphs&lt;a class=&quot;zola-anchor&quot; href=&quot;#3-level-2-the-pipeline-meta-graph-graphs-of-graphs&quot; aria-label=&quot;Anchor link for: 3-level-2-the-pipeline-meta-graph-graphs-of-graphs&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Each compiler pass maps one complete IR graph to another:&lt;&#x2F;p&gt;
+&lt;p&gt;$$
+P_i : G_{i-1} \rightarrow G_i
+$$&lt;&#x2F;p&gt;
+&lt;p&gt;Hence the overall compiler pipeline can be viewed as a &lt;strong&gt;meta-graph&lt;&#x2F;strong&gt;:&lt;&#x2F;p&gt;
+&lt;p&gt;$$
+\mathcal{G} = (\mathcal{V}, \mathcal{E}), \quad
+\mathcal{V} = {G_0, G_1, \ldots, G_n}, \quad
+\mathcal{E} = {(G_{i-1}, G_i) \mid G_i = P_i(G_{i-1})}
+$$&lt;&#x2F;p&gt;
+&lt;p&gt;Example pipeline:&lt;&#x2F;p&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;[MHLO Graph] --(P1)--&amp;gt; [Linalg Graph] --(P2)--&amp;gt; [LLVM Graph]
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;ul&gt;
+&lt;li&gt;Nodes ($\mathcal{V}$): IR snapshots (entire program graphs)&lt;&#x2F;li&gt;
+&lt;li&gt;Edges ($\mathcal{E}$): passes (transformations)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;The meta-graph is &lt;strong&gt;directed and acyclic&lt;&#x2F;strong&gt;, since lowering moves from high-level to low-level representations.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;4-hierarchy-summary&quot;&gt;4) Hierarchy Summary&lt;a class=&quot;zola-anchor&quot; href=&quot;#4-hierarchy-summary&quot; aria-label=&quot;Anchor link for: 4-hierarchy-summary&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th style=&quot;text-align: left&quot;&gt;Level&lt;&#x2F;th&gt;&lt;th style=&quot;text-align: left&quot;&gt;Nodes&lt;&#x2F;th&gt;&lt;th style=&quot;text-align: left&quot;&gt;Edges&lt;&#x2F;th&gt;&lt;th style=&quot;text-align: left&quot;&gt;Meaning&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td style=&quot;text-align: left&quot;&gt;0: IR Graph&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Operations&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Dataflow&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;The computation itself&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td style=&quot;text-align: left&quot;&gt;1: Pass Graph&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Rewrite rules&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Rule dependencies&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Local transformations&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td style=&quot;text-align: left&quot;&gt;2: Pipeline Meta-Graph&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;IR snapshots&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Passes between IRs&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;The full lowering pipeline&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;p&gt;Each higher level acts &lt;strong&gt;on&lt;&#x2F;strong&gt; the level beneath it.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;5-category-theoretic-view&quot;&gt;5) Category-Theoretic View&lt;a class=&quot;zola-anchor&quot; href=&quot;#5-category-theoretic-view&quot; aria-label=&quot;Anchor link for: 5-category-theoretic-view&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Define a category $\mathcal{C}$ whose objects are IR graphs and whose morphisms are passes:&lt;&#x2F;p&gt;
+&lt;p&gt;$$
+\text{Obj}(\mathcal{C}) = {G_i}, \quad
+\text{Mor}(\mathcal{C}) = {P_i: G_{i-1} \to G_i}
+$$&lt;&#x2F;p&gt;
+&lt;p&gt;Then a lowering pipeline is a &lt;strong&gt;composition of morphisms&lt;&#x2F;strong&gt;:&lt;&#x2F;p&gt;
+&lt;p&gt;$$
+G_0 \xrightarrow{P_1} G_1 \xrightarrow{P_2} G_2 \xrightarrow{P_3} \cdots \xrightarrow{P_n} G_n
+$$&lt;&#x2F;p&gt;
+&lt;p&gt;A compiler can thus be interpreted as a &lt;strong&gt;functor&lt;&#x2F;strong&gt; between categories of graphs, preserving semantic structure through successive transformations.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;6-ascii-visualization&quot;&gt;6) ASCII Visualization&lt;a class=&quot;zola-anchor&quot; href=&quot;#6-ascii-visualization&quot; aria-label=&quot;Anchor link for: 6-ascii-visualization&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;LEVEL 2: Meta-Graph (Pipeline)
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;──────────────────────────────
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   [G0: MHLO] ──P1──&amp;gt; [G1: Linalg] ──P2──&amp;gt; [G2: LLVM]
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;          │                  │                    │
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;          ▼                  ▼                    ▼
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;LEVEL 1: Pass Graphs
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;──────────────────────────────
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   mhlo.add→linalg.add   linalg.matmul→llvm.call
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   mhlo.relu→linalg.max  ...
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;          │                  │
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;          ▼                  ▼
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;LEVEL 0: IR Graphs
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;──────────────────────────────
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   mhlo.add ─→ mhlo.relu → return
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   linalg.add ─→ linalg.max → return
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   llvm.add ─→ llvm.ret
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;7-relation-to-established-frameworks&quot;&gt;7) Relation to Established Frameworks&lt;a class=&quot;zola-anchor&quot; href=&quot;#7-relation-to-established-frameworks&quot; aria-label=&quot;Anchor link for: 7-relation-to-established-frameworks&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;The “graph-of-graphs” viewpoint exists under several names across different research areas:&lt;&#x2F;p&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th style=&quot;text-align: left&quot;&gt;Domain&lt;&#x2F;th&gt;&lt;th style=&quot;text-align: left&quot;&gt;Equivalent Concept&lt;&#x2F;th&gt;&lt;th style=&quot;text-align: left&quot;&gt;Reference&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td style=&quot;text-align: left&quot;&gt;Compiler theory&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Pass pipelines as graph transformations&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;LLVM &#x2F; MLIR design docs&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td style=&quot;text-align: left&quot;&gt;Graph rewriting systems&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Double-pushout (DPO) formalism&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Ehrig et al., &lt;em&gt;Graph Grammars&lt;&#x2F;em&gt;, 1999&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td style=&quot;text-align: left&quot;&gt;Category theory&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Functors between graph categories&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Carette et al., &lt;em&gt;Compiling to Categories&lt;&#x2F;em&gt;, 2010&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td style=&quot;text-align: left&quot;&gt;Equality saturation&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;DAG of equivalent graphs&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Willsey et al., &lt;em&gt;egg&lt;&#x2F;em&gt;, 2021&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td style=&quot;text-align: left&quot;&gt;Verified compilation&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;IR equivalence proofs&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Lopes et al., &lt;em&gt;Alive2&lt;&#x2F;em&gt;, 2020&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td style=&quot;text-align: left&quot;&gt;Meta-scheduling&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Compiler DAG search&lt;&#x2F;td&gt;&lt;td style=&quot;text-align: left&quot;&gt;Chen et al., &lt;em&gt;TVM Unity&lt;&#x2F;em&gt;, 2023&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;8-selected-references&quot;&gt;8) Selected References&lt;a class=&quot;zola-anchor&quot; href=&quot;#8-selected-references&quot; aria-label=&quot;Anchor link for: 8-selected-references&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;C. Lattner et al.&lt;&#x2F;strong&gt;, &lt;em&gt;MLIR: A Compiler Infrastructure for the End of Moore’s Law&lt;&#x2F;em&gt;, arXiv:2002.11054 (2021).&lt;br &#x2F;&gt;
+Defines the dialect + pass architecture; each dialect transition corresponds to a graph morphism.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;H. Ehrig et al.&lt;&#x2F;strong&gt;, &lt;em&gt;Handbook of Graph Grammars and Computing by Graph Transformation&lt;&#x2F;em&gt;, World Scientific (1999).&lt;br &#x2F;&gt;
+Establishes the double-pushout formalism used to describe structured graph rewriting.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;J. Willsey et al.&lt;&#x2F;strong&gt;, &lt;em&gt;egg: Fast and Extensible Equality Saturation&lt;&#x2F;em&gt;, PLDI (2021).&lt;br &#x2F;&gt;
+Models optimization as the saturation of a DAG of equivalent program graphs.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;N. Lopes et al.&lt;&#x2F;strong&gt;, &lt;em&gt;Alive2: Bounded Translation Validation for LLVM&lt;&#x2F;em&gt;, arXiv:2004.04344.&lt;br &#x2F;&gt;
+Proves semantic equivalence between IR transformations, effectively linking graphs $G_i$ and $G_{i+1}$.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;O. Kiselyov, J. Carette, C. Shan&lt;&#x2F;strong&gt;, &lt;em&gt;Compiling to Categories&lt;&#x2F;em&gt;, ICFP (2010).&lt;br &#x2F;&gt;
+Provides categorical semantics for compilation as functor composition.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;T. Chen et al.&lt;&#x2F;strong&gt;, &lt;em&gt;TVM: End-to-End Optimization Stack for Deep Learning&lt;&#x2F;em&gt;, OSDI (2018).&lt;br &#x2F;&gt;
+Represents compiler pass pipelines as meta-graphs for automated search and scheduling.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;9-takeaway&quot;&gt;9) Takeaway&lt;a class=&quot;zola-anchor&quot; href=&quot;#9-takeaway&quot; aria-label=&quot;Anchor link for: 9-takeaway&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Lowering in MLIR&#x2F;LLVM is not a simple sequence of textual transformations.&lt;br &#x2F;&gt;
+It is a &lt;strong&gt;hierarchical system of graph transformations&lt;&#x2F;strong&gt;, where:&lt;&#x2F;p&gt;
+&lt;p&gt;$$
+\mathcal{G} : G_0 \xrightarrow{P_1} G_1 \xrightarrow{P_2} \cdots \xrightarrow{P_n} G_n
+$$&lt;&#x2F;p&gt;
+&lt;p&gt;Each $G_i$ is an IR graph (computation), and each $P_i$ is a morphism (pass).&lt;br &#x2F;&gt;
+This structure unifies compiler pipelines, graph rewriting systems, and categorical reasoning into a single framework for understanding how complex program transformations can be represented, optimized, and verified.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;p&gt;&lt;strong&gt;Author:&lt;&#x2F;strong&gt; Joseph Bak&lt;br &#x2F;&gt;
+&lt;strong&gt;Date:&lt;&#x2F;strong&gt; 2025-10-14&lt;br &#x2F;&gt;
+&lt;strong&gt;Keywords:&lt;&#x2F;strong&gt; MLIR, LLVM, Compiler Passes, Graph Transformation, Category Theory&lt;&#x2F;p&gt;
+</content>
+	</entry>
 	<entry xml:lang="en">
 		<title>Memory Alignment and Hardware Constraints in C++</title>
 		<published>2025-10-13T00:00:00+00:00</published>

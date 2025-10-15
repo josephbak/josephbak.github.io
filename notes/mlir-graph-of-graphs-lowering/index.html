@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  
+  
+    
+  
+  <meta name="description" content="A formal note describing how compiler lowering pipelines can be represented as graph transformations over computation graphs, forming a hierarchical graph-of-graphs structure.">
+
+  <title>Lowering as Graph-of-Graphs: A Structural View of MLIR and LLVM Pipelines</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="https://josephbak.github.io/img/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://josephbak.github.io/img/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://josephbak.github.io/img/apple-touch-icon.png">
+  
+  <style>
+
+  /* light mode colors */
+  body {
+    --primary-color: #5871a2;
+    --primary-pale-color: #5871a233;
+    --primary-decoration-color: #5871a210;
+    --bg-color: #ffffff;
+    --text-color: #2f3030;
+    --text-pale-color: #767676;
+    --text-decoration-color: #a9a9a9;
+    --highlight-mark-color: #5f75b020;
+
+    --callout-note-color: #5871a2;
+    --callout-tip-color: #268556;
+    --callout-important-color: #885fc9;
+    --callout-warning-color: #ab6632;
+    --callout-caution-color: #c64e4e;
+  }
+
+  /* dark mode colors */
+  body.dark {
+    --primary-color: #6f8fd1;
+    --primary-pale-color: #6f8fd166;
+    --primary-decoration-color: #6f8fd112;
+    --bg-color: #1c1c1c;
+    --text-color: #c1c1c1;
+    --text-pale-color: #848484;
+    --text-decoration-color: #5f5f5f;
+    --highlight-mark-color: #8296cb3b;
+
+    --callout-note-color: #6f8fd1;
+    --callout-tip-color: #47976f;
+    --callout-important-color: #9776cd;
+    --callout-warning-color: #ad7a52;
+    --callout-caution-color: #d06161;
+  }
+
+  /* typography */
+  body {
+    --main-font: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --code-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --homepage-max-width: 768px;
+    --main-max-width: 768px;
+    --avatar-size: 60px;
+    --font-size: 16px;
+    --line-height: 1.75;
+    --img-border-radius: 0px;
+    --detail-border-radius: 0px;
+    --dark-mode-img-brightness: 0.75;
+    --dark-mode-chart-brightness: 0.75;
+    --inline-code-border-radius: 2px;
+    --inline-code-bg-color: var(--primary-decoration-color);
+    --block-code-border-radius: 0px;
+    --block-code-border-color: var(--primary-color);
+    --detail-border-color: var(--primary-color);
+  }
+
+</style>
+
+  <link rel="stylesheet" href="https://josephbak.github.io/main.css">
+  
+
+<link id="hl" rel="stylesheet" type="text/css" href="/hl-light.css" />
+
+
+
+  
+</head>
+
+<body class="post">
+  
+  <script>
+    const theme = sessionStorage.getItem('theme');
+    const match = window.matchMedia("(prefers-color-scheme: dark)").matches
+    if ((theme && theme == 'dark') || (!theme && match)) {
+      document.body.classList.add('dark');
+      const hl = document.querySelector('link#hl');
+      if (hl) hl.href = 'https://josephbak.github.io/hl-dark.css';
+    }
+  </script>
+  
+  
+<div id="wrapper">
+  <div id="blank"></div>
+  <aside>
+    
+    
+    <nav>
+      <ul>
+        
+        <li>
+          <a class="h2" href="#tl-dr">TL;DR</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#1-level-0-the-ir-graph-computation">1) Level-0 — The IR Graph: Computation</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#2-level-1-the-pass-graph-local-rewrite-structure">2) Level-1 — The Pass Graph: Local Rewrite Structure</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#3-level-2-the-pipeline-meta-graph-graphs-of-graphs">3) Level-2 — The Pipeline Meta-Graph: Graphs of Graphs</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#4-hierarchy-summary">4) Hierarchy Summary</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#5-category-theoretic-view">5) Category-Theoretic View</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#6-ascii-visualization">6) ASCII Visualization</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#7-relation-to-established-frameworks">7) Relation to Established Frameworks</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#8-selected-references">8) Selected References</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#9-takeaway">9) Takeaway</a>
+          
+        </li>
+        
+      </ul>
+    </nav>
+    
+    
+    <button id="back-to-top" aria-label="back to top">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-arrow-up"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+
+    </button>
+    
+  </aside>
+  <main>
+    
+<header>
+  <nav>
+    <a id="back-link" href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts">← Back</a>
+  </nav>
+</header>
+
+
+    <div>
+      
+      
+      
+      
+      <div id="copy-cfg" style="display: none;" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+"></div>
+      
+      <article class="prose">
+        <h1>Lowering as Graph-of-Graphs: A Structural View of MLIR and LLVM Pipelines</h1>
+        <div id="post-info">
+          <div id="date">
+            <span id="publish">Oct 14, 2025</span>
+            </div>
+
+          
+          <div id="tags">
+            <a class="instant" href="https://josephbak.github.io//tags/mlir"><span>#</span>mlir</a><a class="instant" href="https://josephbak.github.io//tags/llvm"><span>#</span>llvm</a><a class="instant" href="https://josephbak.github.io//tags/compilers"><span>#</span>compilers</a><a class="instant" href="https://josephbak.github.io//tags/graph"><span>#</span>graph</a><a class="instant" href="https://josephbak.github.io//tags/category-theory"><span>#</span>category-theory</a>
+          </div>
+          
+        </div>
+
+        
+        
+
+        
+
+        <!-- KaTeX includes (inline; requires markdown.render_unsafe = true) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
+<script>
+ document.addEventListener("DOMContentLoaded", function() {
+ renderMathInElement(document.body, {
+ delimiters: [
+ {left: "$$", right: "$$", display: true},
+ {left: "\[", right: "\]", display: true},
+ {left: "$", right: "$", display: false},
+ {left: "\(", right: "\)", display: false}
+ ],
+ throwOnError: false
+ });
+ });
+</script>
+<p><em>A structural note on how the MLIR/LLVM lowering process itself forms a higher-order computation graph — a graph of graph transformations.</em></p>
+<hr />
+<h2 id="tl-dr">TL;DR<a class="zola-anchor" href="#tl-dr" aria-label="Anchor link for: tl-dr" style="visibility: hidden;"></a>
+</h2>
+<ul>
+<li>Every program in MLIR or LLVM IR can be represented as a <strong>computation graph</strong> $G = (V,E)$.</li>
+<li>Each <strong>compiler pass</strong> acts as a <strong>graph transformation</strong> $P_i: G_{i-1} \to G_i$.</li>
+<li>The entire <strong>pipeline</strong> is therefore a <strong>meta-graph</strong> (a directed graph whose nodes are IR graphs and edges are passes).</li>
+<li>Conceptually, compiler lowering is a <strong>graph of transformations over graphs of computation</strong>.</li>
+<li>This interpretation connects modern compiler design with <strong>graph rewriting systems</strong> and <strong>category theory</strong>.</li>
+</ul>
+<hr />
+<h2 id="1-level-0-the-ir-graph-computation">1) Level-0 — The IR Graph: Computation<a class="zola-anchor" href="#1-level-0-the-ir-graph-computation" aria-label="Anchor link for: 1-level-0-the-ir-graph-computation" style="visibility: hidden;"></a>
+</h2>
+<p>At the base level, a program is represented as a directed graph</p>
+<p>$$
+G_0 = (V_0, E_0)
+$$</p>
+<p>where:</p>
+<ul>
+<li>$V_0$: operations (e.g., <code>mhlo.add</code>, <code>mhlo.dot</code>, <code>linalg.matmul</code>)</li>
+<li>$E_0$: data dependencies (SSA edges)</li>
+</ul>
+<p>Example:</p>
+<pre class="z-code"><code><span class="z-text z-plain">   %x
+</span><span class="z-text z-plain">    │
+</span><span class="z-text z-plain">    ▼
+</span><span class="z-text z-plain"> mhlo.add
+</span><span class="z-text z-plain">    │
+</span><span class="z-text z-plain">    ▼
+</span><span class="z-text z-plain"> mhlo.relu
+</span><span class="z-text z-plain">    │
+</span><span class="z-text z-plain">    ▼
+</span><span class="z-text z-plain"> mhlo.return
+</span></code></pre>
+<p>This is the <strong>program graph</strong>—it captures what is computed, not how it is lowered.</p>
+<hr />
+<h2 id="2-level-1-the-pass-graph-local-rewrite-structure">2) Level-1 — The Pass Graph: Local Rewrite Structure<a class="zola-anchor" href="#2-level-1-the-pass-graph-local-rewrite-structure" aria-label="Anchor link for: 2-level-1-the-pass-graph-local-rewrite-structure" style="visibility: hidden;"></a>
+</h2>
+<p>Each compiler pass applies a set of rewrite rules to subgraphs of the IR.</p>
+<p>Formally:
+$$
+P = (V_P, E_P)
+$$</p>
+<p>where:</p>
+<ul>
+<li>$V_P$: rewrite rules (pattern + replacement)</li>
+<li>$E_P$: dependencies among rules (e.g., one rewrite must precede another)</li>
+</ul>
+<p>Example (MHLO → Linalg lowering):</p>
+<pre class="z-code"><code><span class="z-text z-plain"> Pass: mhlo → linalg
+</span><span class="z-text z-plain"> ───────────────────
+</span><span class="z-text z-plain"> mhlo.add  ───→  linalg.add
+</span><span class="z-text z-plain"> mhlo.relu ───→  linalg.max
+</span></code></pre>
+<p>This graph represents the <strong>local transformation flow</strong> within a single pass.</p>
+<hr />
+<h2 id="3-level-2-the-pipeline-meta-graph-graphs-of-graphs">3) Level-2 — The Pipeline Meta-Graph: Graphs of Graphs<a class="zola-anchor" href="#3-level-2-the-pipeline-meta-graph-graphs-of-graphs" aria-label="Anchor link for: 3-level-2-the-pipeline-meta-graph-graphs-of-graphs" style="visibility: hidden;"></a>
+</h2>
+<p>Each compiler pass maps one complete IR graph to another:</p>
+<p>$$
+P_i : G_{i-1} \rightarrow G_i
+$$</p>
+<p>Hence the overall compiler pipeline can be viewed as a <strong>meta-graph</strong>:</p>
+<p>$$
+\mathcal{G} = (\mathcal{V}, \mathcal{E}), \quad
+\mathcal{V} = {G_0, G_1, \ldots, G_n}, \quad
+\mathcal{E} = {(G_{i-1}, G_i) \mid G_i = P_i(G_{i-1})}
+$$</p>
+<p>Example pipeline:</p>
+<pre class="z-code"><code><span class="z-text z-plain">[MHLO Graph] --(P1)--&gt; [Linalg Graph] --(P2)--&gt; [LLVM Graph]
+</span></code></pre>
+<ul>
+<li>Nodes ($\mathcal{V}$): IR snapshots (entire program graphs)</li>
+<li>Edges ($\mathcal{E}$): passes (transformations)</li>
+</ul>
+<p>The meta-graph is <strong>directed and acyclic</strong>, since lowering moves from high-level to low-level representations.</p>
+<hr />
+<h2 id="4-hierarchy-summary">4) Hierarchy Summary<a class="zola-anchor" href="#4-hierarchy-summary" aria-label="Anchor link for: 4-hierarchy-summary" style="visibility: hidden;"></a>
+</h2>
+<table><thead><tr><th style="text-align: left">Level</th><th style="text-align: left">Nodes</th><th style="text-align: left">Edges</th><th style="text-align: left">Meaning</th></tr></thead><tbody>
+<tr><td style="text-align: left">0: IR Graph</td><td style="text-align: left">Operations</td><td style="text-align: left">Dataflow</td><td style="text-align: left">The computation itself</td></tr>
+<tr><td style="text-align: left">1: Pass Graph</td><td style="text-align: left">Rewrite rules</td><td style="text-align: left">Rule dependencies</td><td style="text-align: left">Local transformations</td></tr>
+<tr><td style="text-align: left">2: Pipeline Meta-Graph</td><td style="text-align: left">IR snapshots</td><td style="text-align: left">Passes between IRs</td><td style="text-align: left">The full lowering pipeline</td></tr>
+</tbody></table>
+<p>Each higher level acts <strong>on</strong> the level beneath it.</p>
+<hr />
+<h2 id="5-category-theoretic-view">5) Category-Theoretic View<a class="zola-anchor" href="#5-category-theoretic-view" aria-label="Anchor link for: 5-category-theoretic-view" style="visibility: hidden;"></a>
+</h2>
+<p>Define a category $\mathcal{C}$ whose objects are IR graphs and whose morphisms are passes:</p>
+<p>$$
+\text{Obj}(\mathcal{C}) = {G_i}, \quad
+\text{Mor}(\mathcal{C}) = {P_i: G_{i-1} \to G_i}
+$$</p>
+<p>Then a lowering pipeline is a <strong>composition of morphisms</strong>:</p>
+<p>$$
+G_0 \xrightarrow{P_1} G_1 \xrightarrow{P_2} G_2 \xrightarrow{P_3} \cdots \xrightarrow{P_n} G_n
+$$</p>
+<p>A compiler can thus be interpreted as a <strong>functor</strong> between categories of graphs, preserving semantic structure through successive transformations.</p>
+<hr />
+<h2 id="6-ascii-visualization">6) ASCII Visualization<a class="zola-anchor" href="#6-ascii-visualization" aria-label="Anchor link for: 6-ascii-visualization" style="visibility: hidden;"></a>
+</h2>
+<pre class="z-code"><code><span class="z-text z-plain">LEVEL 2: Meta-Graph (Pipeline)
+</span><span class="z-text z-plain">──────────────────────────────
+</span><span class="z-text z-plain">   [G0: MHLO] ──P1──&gt; [G1: Linalg] ──P2──&gt; [G2: LLVM]
+</span><span class="z-text z-plain">          │                  │                    │
+</span><span class="z-text z-plain">          ▼                  ▼                    ▼
+</span><span class="z-text z-plain">LEVEL 1: Pass Graphs
+</span><span class="z-text z-plain">──────────────────────────────
+</span><span class="z-text z-plain">   mhlo.add→linalg.add   linalg.matmul→llvm.call
+</span><span class="z-text z-plain">   mhlo.relu→linalg.max  ...
+</span><span class="z-text z-plain">          │                  │
+</span><span class="z-text z-plain">          ▼                  ▼
+</span><span class="z-text z-plain">LEVEL 0: IR Graphs
+</span><span class="z-text z-plain">──────────────────────────────
+</span><span class="z-text z-plain">   mhlo.add ─→ mhlo.relu → return
+</span><span class="z-text z-plain">   linalg.add ─→ linalg.max → return
+</span><span class="z-text z-plain">   llvm.add ─→ llvm.ret
+</span></code></pre>
+<hr />
+<h2 id="7-relation-to-established-frameworks">7) Relation to Established Frameworks<a class="zola-anchor" href="#7-relation-to-established-frameworks" aria-label="Anchor link for: 7-relation-to-established-frameworks" style="visibility: hidden;"></a>
+</h2>
+<p>The “graph-of-graphs” viewpoint exists under several names across different research areas:</p>
+<table><thead><tr><th style="text-align: left">Domain</th><th style="text-align: left">Equivalent Concept</th><th style="text-align: left">Reference</th></tr></thead><tbody>
+<tr><td style="text-align: left">Compiler theory</td><td style="text-align: left">Pass pipelines as graph transformations</td><td style="text-align: left">LLVM / MLIR design docs</td></tr>
+<tr><td style="text-align: left">Graph rewriting systems</td><td style="text-align: left">Double-pushout (DPO) formalism</td><td style="text-align: left">Ehrig et al., <em>Graph Grammars</em>, 1999</td></tr>
+<tr><td style="text-align: left">Category theory</td><td style="text-align: left">Functors between graph categories</td><td style="text-align: left">Carette et al., <em>Compiling to Categories</em>, 2010</td></tr>
+<tr><td style="text-align: left">Equality saturation</td><td style="text-align: left">DAG of equivalent graphs</td><td style="text-align: left">Willsey et al., <em>egg</em>, 2021</td></tr>
+<tr><td style="text-align: left">Verified compilation</td><td style="text-align: left">IR equivalence proofs</td><td style="text-align: left">Lopes et al., <em>Alive2</em>, 2020</td></tr>
+<tr><td style="text-align: left">Meta-scheduling</td><td style="text-align: left">Compiler DAG search</td><td style="text-align: left">Chen et al., <em>TVM Unity</em>, 2023</td></tr>
+</tbody></table>
+<hr />
+<h2 id="8-selected-references">8) Selected References<a class="zola-anchor" href="#8-selected-references" aria-label="Anchor link for: 8-selected-references" style="visibility: hidden;"></a>
+</h2>
+<ol>
+<li>
+<p><strong>C. Lattner et al.</strong>, <em>MLIR: A Compiler Infrastructure for the End of Moore’s Law</em>, arXiv:2002.11054 (2021).<br />
+Defines the dialect + pass architecture; each dialect transition corresponds to a graph morphism.</p>
+</li>
+<li>
+<p><strong>H. Ehrig et al.</strong>, <em>Handbook of Graph Grammars and Computing by Graph Transformation</em>, World Scientific (1999).<br />
+Establishes the double-pushout formalism used to describe structured graph rewriting.</p>
+</li>
+<li>
+<p><strong>J. Willsey et al.</strong>, <em>egg: Fast and Extensible Equality Saturation</em>, PLDI (2021).<br />
+Models optimization as the saturation of a DAG of equivalent program graphs.</p>
+</li>
+<li>
+<p><strong>N. Lopes et al.</strong>, <em>Alive2: Bounded Translation Validation for LLVM</em>, arXiv:2004.04344.<br />
+Proves semantic equivalence between IR transformations, effectively linking graphs $G_i$ and $G_{i+1}$.</p>
+</li>
+<li>
+<p><strong>O. Kiselyov, J. Carette, C. Shan</strong>, <em>Compiling to Categories</em>, ICFP (2010).<br />
+Provides categorical semantics for compilation as functor composition.</p>
+</li>
+<li>
+<p><strong>T. Chen et al.</strong>, <em>TVM: End-to-End Optimization Stack for Deep Learning</em>, OSDI (2018).<br />
+Represents compiler pass pipelines as meta-graphs for automated search and scheduling.</p>
+</li>
+</ol>
+<hr />
+<h2 id="9-takeaway">9) Takeaway<a class="zola-anchor" href="#9-takeaway" aria-label="Anchor link for: 9-takeaway" style="visibility: hidden;"></a>
+</h2>
+<p>Lowering in MLIR/LLVM is not a simple sequence of textual transformations.<br />
+It is a <strong>hierarchical system of graph transformations</strong>, where:</p>
+<p>$$
+\mathcal{G} : G_0 \xrightarrow{P_1} G_1 \xrightarrow{P_2} \cdots \xrightarrow{P_n} G_n
+$$</p>
+<p>Each $G_i$ is an IR graph (computation), and each $P_i$ is a morphism (pass).<br />
+This structure unifies compiler pipelines, graph rewriting systems, and categorical reasoning into a single framework for understanding how complex program transformations can be represented, optimized, and verified.</p>
+<hr />
+<p><strong>Author:</strong> Joseph Bak<br />
+<strong>Date:</strong> 2025-10-14<br />
+<strong>Keywords:</strong> MLIR, LLVM, Compiler Passes, Graph Transformation, Category Theory</p>
+
+      </article>
+
+      
+      
+
+      
+      
+    </div>
+
+    
+
+
+<footer>
+  <div class="left">
+    <div class="copyright">
+      © 2025 &lt;joseph bak&gt;
+      
+      <span>|</span>
+      Built with <a href="https://www.getzola.org" rel="noreferrer" target="_blank">zola</a> and <a href="https://github.com/isunjn/serene" rel="noreferrer" target="_blank">serene</a>
+      
+    </div>
+  </div>
+
+  <div class="right">
+    
+    
+      
+    
+    
+    <a id="rss-btn" href="https://josephbak.github.io/posts/feed.xml">RSS</a>
+    
+    
+
+    
+    
+    
+    <button id="theme-toggle" aria-label="theme switch">
+      <span class="moon-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M10 7C10 10.866 13.134 14 17 14C18.9584 14 20.729 13.1957 21.9995 11.8995C22 11.933 22 11.9665 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C12.0335 2 12.067 2 12.1005 2.00049C10.8043 3.27098 10 5.04157 10 7ZM4 12C4 16.4183 7.58172 20 12 20C15.0583 20 17.7158 18.2839 19.062 15.7621C18.3945 15.9187 17.7035 16 17 16C12.0294 16 8 11.9706 8 7C8 6.29648 8.08133 5.60547 8.2379 4.938C5.71611 6.28423 4 8.9417 4 12Z" fill="currentColor"></path></svg>
+</span>
+      <span class="sun-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M12 18C8.68629 18 6 15.3137 6 12C6 8.68629 8.68629 6 12 6C15.3137 6 18 8.68629 18 12C18 15.3137 15.3137 18 12 18ZM12 16C14.2091 16 16 14.2091 16 12C16 9.79086 14.2091 8 12 8C9.79086 8 8 9.79086 8 12C8 14.2091 9.79086 16 12 16ZM11 1H13V4H11V1ZM11 20H13V23H11V20ZM3.51472 4.92893L4.92893 3.51472L7.05025 5.63604L5.63604 7.05025L3.51472 4.92893ZM16.9497 18.364L18.364 16.9497L20.4853 19.0711L19.0711 20.4853L16.9497 18.364ZM19.0711 3.51472L20.4853 4.92893L18.364 7.05025L16.9497 5.63604L19.0711 3.51472ZM5.63604 16.9497L7.05025 18.364L4.92893 20.4853L3.51472 19.0711L5.63604 16.9497ZM23 11V13H20V11H23ZM4 11V13H1V11H4Z" fill="currentColor"></path></svg>
+</span>
+    </button>
+    
+  </div>
+</footer>
+
+
+
+
+<dialog id="rss-mask">
+  <div>
+    <a href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml">https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml</a>
+    
+    
+    <button autofocus aria-label="copy" data-link="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z" fill="currentColor"></path></svg>
+
+    </button>
+  </div>
+</dialog>
+
+
+
+  </main>
+</div>
+
+  
+<script src="/js/lightense.min.js"></script>
+
+
+  <script src="https://josephbak.github.io/js/main.js"></script>
+</body>
+
+</html>

@@ -41,6 +41,10 @@
         <lastmod>2025-10-04</lastmod>
     </url>
     <url>
+        <loc>https://josephbak.github.io/notes/mlir-graph-of-graphs-lowering/</loc>
+        <lastmod>2025-10-14</lastmod>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/notes/mlir-speculative-duplication-cost-model/</loc>
         <lastmod>2025-10-07</lastmod>
     </url>
@@ -65,10 +69,19 @@
         <loc>https://josephbak.github.io/tags/affine/</loc>
     </url>
     <url>
+        <loc>https://josephbak.github.io/tags/category-theory/</loc>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/tags/compilers/</loc>
     </url>
     <url>
+        <loc>https://josephbak.github.io/tags/graph/</loc>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/tags/linalg/</loc>
+    </url>
+    <url>
+        <loc>https://josephbak.github.io/tags/llvm/</loc>
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/mlir/</loc>
