@@ -105,8 +105,8 @@ $$&lt;&#x2F;p&gt;
 &lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;[MHLO Graph] --(P1)--&amp;gt; [Linalg Graph] --(P2)--&amp;gt; [LLVM Graph]
 &lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
 &lt;ul&gt;
-&lt;li&gt;Nodes ($\mathcal{V}$): IR snapshots (entire program graphs)&lt;&#x2F;li&gt;
-&lt;li&gt;Edges ($\mathcal{E}$): passes (transformations)&lt;&#x2F;li&gt;
+&lt;li&gt;Nodes ($ \mathcal{V} $): IR snapshots (entire program graphs)&lt;&#x2F;li&gt;
+&lt;li&gt;Edges ($ \mathcal{E} $): passes (transformations)&lt;&#x2F;li&gt;
 &lt;&#x2F;ul&gt;
 &lt;p&gt;The meta-graph is &lt;strong&gt;directed and acyclic&lt;&#x2F;strong&gt;, since lowering moves from high-level to low-level representations.&lt;&#x2F;p&gt;
 &lt;hr &#x2F;&gt;
