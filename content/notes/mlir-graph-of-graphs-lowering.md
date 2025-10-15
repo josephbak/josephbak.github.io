@@ -17,9 +17,9 @@ tags = ["mlir", "llvm", "compilers", "graph", "category-theory"]
  document.addEventListener("DOMContentLoaded", function() {
  renderMathInElement(document.body, {
  delimiters: [
- {left: "$$", right: "$$", display: true},
+ {left: "\$\$", right: "\$\$", display: true},
  {left: "\[", right: "\]", display: true},
- {left: "$", right: "$", display: false},
+ {left: "\(", right: "\)", display: false},
  {left: "\(", right: "\)", display: false}
  ],
  throwOnError: false
@@ -33,8 +33,8 @@ _A structural note on how the MLIR/LLVM lowering process itself forms a higher-o
 
 ## TL;DR
 
-- Every program in MLIR or LLVM IR can be represented as a **computation graph** $G = (V,E)$.
-- Each **compiler pass** acts as a **graph transformation** $P_i: G_{i-1} \to G_i$.
+- Every program in MLIR or LLVM IR can be represented as a **computation graph** \(G = (V,E)\).
+- Each **compiler pass** acts as a **graph transformation** \(P_i: G_{i-1} \to G_i\).
 - The entire **pipeline** is therefore a **meta-graph** (a directed graph whose nodes are IR graphs and edges are passes).
 - Conceptually, compiler lowering is a **graph of transformations over graphs of computation**.
 - This interpretation connects modern compiler design with **graph rewriting systems** and **category theory**.
@@ -45,13 +45,13 @@ _A structural note on how the MLIR/LLVM lowering process itself forms a higher-o
 
 At the base level, a program is represented as a directed graph
 
-$$
+\$\$
 G_0 = (V_0, E_0)
-$$
+\$\$
 
 where:
-- $V_0$: operations (e.g., `mhlo.add`, `mhlo.dot`, `linalg.matmul`)
-- $E_0$: data dependencies (SSA edges)
+- \(V_0\): operations (e.g., `mhlo.add`, `mhlo.dot`, `linalg.matmul`)
+- \(E_0\): data dependencies (SSA edges)
 
 Example:
 
@@ -77,13 +77,13 @@ This is the **program graph**—it captures what is computed, not how it is lowe
 Each compiler pass applies a set of rewrite rules to subgraphs of the IR.
 
 Formally:
-$$
+\$\$
 P = (V_P, E_P)
-$$
+\$\$
 
 where:
-- $V_P$: rewrite rules (pattern + replacement)
-- $E_P$: dependencies among rules (e.g., one rewrite must precede another)
+- \(V_P\): rewrite rules (pattern + replacement)
+- \(E_P\): dependencies among rules (e.g., one rewrite must precede another)
 
 Example (MHLO → Linalg lowering):
 
@@ -102,17 +102,17 @@ This graph represents the **local transformation flow** within a single pass.
 
 Each compiler pass maps one complete IR graph to another:
 
-$$
+\$\$
 P_i : G_{i-1} \rightarrow G_i
-$$
+\$\$
 
 Hence the overall compiler pipeline can be viewed as a **meta-graph**:
 
-$$
+\$\$
 \mathcal{G} = (\mathcal{V}, \mathcal{E}), \quad
 \mathcal{V} = \{G_0, G_1, \ldots, G_n\}, \quad
 \mathcal{E} = \{(G_{i-1}, G_i) \mid G_i = P_i(G_{i-1})\}
-$$
+\$\$
 
 Example pipeline:
 
@@ -120,8 +120,8 @@ Example pipeline:
 [MHLO Graph] --(P1)--> [Linalg Graph] --(P2)--> [LLVM Graph]
 ```
 
-- Nodes ($ \mathcal{V} $): IR snapshots (entire program graphs)
-- Edges ($ \mathcal{E} $): passes (transformations)
+- Nodes (\(\mathcal{V}\)): IR snapshots (entire program graphs)
+- Edges (\(\mathcal{E}\)): passes (transformations)
 
 The meta-graph is **directed and acyclic**, since lowering moves from high-level to low-level representations.
 
@@ -141,18 +141,18 @@ Each higher level acts **on** the level beneath it.
 
 ## 5) Category-Theoretic View
 
-Define a category $\mathcal{C}$ whose objects are IR graphs and whose morphisms are passes:
+Define a category \(\mathcal{C}\) whose objects are IR graphs and whose morphisms are passes:
 
-$$
+\$\$
 \text{Obj}(\mathcal{C}) = \{G_i\}, \quad
 \text{Mor}(\mathcal{C}) = \{P_i: G_{i-1} \to G_i\}
-$$
+\$\$
 
 Then a lowering pipeline is a **composition of morphisms**:
 
-$$
+\$\$
 G_0 \xrightarrow{P_1} G_1 \xrightarrow{P_2} G_2 \xrightarrow{P_3} \cdots \xrightarrow{P_n} G_n
-$$
+\$\$
 
 A compiler can thus be interpreted as a **functor** between categories of graphs, preserving semantic structure through successive transformations.
 
@@ -208,7 +208,7 @@ The “graph-of-graphs” viewpoint exists under several names across different 
    Models optimization as the saturation of a DAG of equivalent program graphs.
 
 4. **N. Lopes et al.**, *Alive2: Bounded Translation Validation for LLVM*, arXiv:2004.04344.  
-   Proves semantic equivalence between IR transformations, effectively linking graphs $G_i$ and $G_{i+1}$.
+   Proves semantic equivalence between IR transformations, effectively linking graphs \(G_i\) and \(G_{i+1}\).
 
 5. **O. Kiselyov, J. Carette, C. Shan**, *Compiling to Categories*, ICFP (2010).  
    Provides categorical semantics for compilation as functor composition.
@@ -223,11 +223,11 @@ The “graph-of-graphs” viewpoint exists under several names across different 
 Lowering in MLIR/LLVM is not a simple sequence of textual transformations.  
 It is a **hierarchical system of graph transformations**, where:
 
-$$
+\$\$
 \mathcal{G} : G_0 \xrightarrow{P_1} G_1 \xrightarrow{P_2} \cdots \xrightarrow{P_n} G_n
-$$
+\$\$
 
-Each $G_i$ is an IR graph (computation), and each $P_i$ is a morphism (pass).  
+Each \(G_i\) is an IR graph (computation), and each \(P_i\) is a morphism (pass).  
 This structure unifies compiler pipelines, graph rewriting systems, and categorical reasoning into a single framework for understanding how complex program transformations can be represented, optimized, and verified.
 
 ---
