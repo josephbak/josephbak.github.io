@@ -356,6 +356,294 @@ $$&lt;&#x2F;p&gt;
 </content>
 	</entry>
 	<entry xml:lang="en">
+		<title>Dynamic, Hybrid, and Static Graphs in Deep Learning Compilers</title>
+		<published>2025-10-08T00:00:00+00:00</published>
+		<updated>2025-10-14T00:00:00+00:00</updated>
+		<link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/static-dynamic-hybrid-graph-compilation/"/>
+		<id>https://josephbak.github.io/notes/static-dynamic-hybrid-graph-compilation/</id>
+    
+		<content type="html" xml:base="https://josephbak.github.io/notes/static-dynamic-hybrid-graph-compilation/">&lt;!-- KaTeX includes --&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;katex.min.css&quot;&gt;
+&lt;script defer src=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;katex.min.js&quot;&gt;&lt;&#x2F;script&gt;
+&lt;script defer src=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;contrib&#x2F;auto-render.min.js&quot;&gt;&lt;&#x2F;script&gt;
+&lt;script&gt;
+ document.addEventListener(&quot;DOMContentLoaded&quot;, function() {
+ renderMathInElement(document.body, {
+ delimiters: [
+ {left: &quot;$$&quot;, right: &quot;$$&quot;, display: true},
+ {left: &quot;\[&quot;, right: &quot;\]&quot;, display: true},
+ {left: &quot;$&quot;, right: &quot;$&quot;, display: false},
+ {left: &quot;\(&quot;, right: &quot;\)&quot;, display: false}
+ ],
+ throwOnError: false
+ });
+ });
+&lt;&#x2F;script&gt;
+&lt;p&gt;&lt;em&gt;A detailed note comparing static, dynamic, and hybrid (execution-based and source-transformation) graph construction in modern deep learning compilers.&lt;&#x2F;em&gt;&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;1-computation-graphs-formal-basis&quot;&gt;1. Computation Graphs: Formal Basis&lt;a class=&quot;zola-anchor&quot; href=&quot;#1-computation-graphs-formal-basis&quot; aria-label=&quot;Anchor link for: 1-computation-graphs-formal-basis&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Every deep learning model can be expressed as a &lt;strong&gt;computational graph&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;$$
+G = (V, E)
+$$&lt;&#x2F;p&gt;
+&lt;p&gt;where:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;$V$: operations (e.g., matmul, relu, add)&lt;&#x2F;li&gt;
+&lt;li&gt;$E$: data dependencies&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;During training, two subgraphs exist:&lt;&#x2F;p&gt;
+&lt;ol&gt;
+&lt;li&gt;Forward graph: $G_f$, computing $y = f_\theta(x)$&lt;&#x2F;li&gt;
+&lt;li&gt;Backward graph: $G_b$, computing gradients $\nabla_\theta L = \frac{\partial L(f_\theta(x))}{\partial \theta}$&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;p&gt;Combined:
+$$
+G_{train} = G_f \cup G_b
+$$&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;2-static-graph-compilation&quot;&gt;2. Static Graph Compilation&lt;a class=&quot;zola-anchor&quot; href=&quot;#2-static-graph-compilation&quot; aria-label=&quot;Anchor link for: 2-static-graph-compilation&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;definition&quot;&gt;Definition&lt;a class=&quot;zola-anchor&quot; href=&quot;#definition&quot; aria-label=&quot;Anchor link for: definition&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;p&gt;A &lt;strong&gt;static graph&lt;&#x2F;strong&gt; is built and optimized &lt;strong&gt;before any execution&lt;&#x2F;strong&gt;.&lt;br &#x2F;&gt;
+It represents &lt;em&gt;all&lt;&#x2F;em&gt; possible computations and data flows as a fixed IR.&lt;&#x2F;p&gt;
+&lt;p&gt;Formally:
+$$
+\text{Compile}(f) = G_{static} \xrightarrow[]{\text{optimize}} \text{binary}
+$$&lt;&#x2F;p&gt;
+&lt;p&gt;The graph is immutable at runtime—no retracing or rebuilding.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;workflow-example-onnx-tensorflow-graph-mode-iree&quot;&gt;Workflow Example (ONNX, TensorFlow Graph Mode, IREE)&lt;a class=&quot;zola-anchor&quot; href=&quot;#workflow-example-onnx-tensorflow-graph-mode-iree&quot; aria-label=&quot;Anchor link for: workflow-example-onnx-tensorflow-graph-mode-iree&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Python model
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   ↓ (convert to static IR)
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;GraphDef &#x2F; MLIR &#x2F; ONNX IR
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   ↓ optimization passes (fusion, CSE, folding)
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;LLVM &#x2F; GPU code
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   ↓
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Executable binary
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;h3 id=&quot;advantages&quot;&gt;Advantages&lt;a class=&quot;zola-anchor&quot; href=&quot;#advantages&quot; aria-label=&quot;Anchor link for: advantages&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Full ahead-of-time (AOT) optimization&lt;&#x2F;li&gt;
+&lt;li&gt;Deterministic performance and memory planning&lt;&#x2F;li&gt;
+&lt;li&gt;Ideal for &lt;strong&gt;inference&lt;&#x2F;strong&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;disadvantages&quot;&gt;Disadvantages&lt;a class=&quot;zola-anchor&quot; href=&quot;#disadvantages&quot; aria-label=&quot;Anchor link for: disadvantages&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Inflexible to input-dependent control flow&lt;&#x2F;li&gt;
+&lt;li&gt;Harder debugging (no eager execution)&lt;&#x2F;li&gt;
+&lt;li&gt;Not compatible with arbitrary Python dynamism&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;3-execution-based-hybrid-trace-then-compile&quot;&gt;3. Execution-Based Hybrid (Trace-Then-Compile)&lt;a class=&quot;zola-anchor&quot; href=&quot;#3-execution-based-hybrid-trace-then-compile&quot; aria-label=&quot;Anchor link for: 3-execution-based-hybrid-trace-then-compile&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;This is the approach used by &lt;strong&gt;PyTorch 2.0 (Dynamo + AOTAutograd + Inductor)&lt;&#x2F;strong&gt;.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;process&quot;&gt;Process&lt;a class=&quot;zola-anchor&quot; href=&quot;#process&quot; aria-label=&quot;Anchor link for: process&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Execution + Tracing&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Run model once with tracer tensors.&lt;&#x2F;li&gt;
+&lt;li&gt;Record each operation to build a forward graph $G_f$.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Symbolic AD (AOTAutograd)&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Apply differentiation rules to $G_f$ symbolically to generate $G_b$.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Fusion + Lowering&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Fuse $G_f$ and $G_b$ → $G_{train}$.&lt;&#x2F;li&gt;
+&lt;li&gt;Lower to MLIR&#x2F;LLVM → compile.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Caching&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Cache compiled binaries per guard set (shape, dtype, branch).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Python Code
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   ↓ run once with tracer
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;FX IR
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   ↓ AOTAutograd
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Forward + Backward Graph
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   ↓ Inductor &#x2F; MLIR
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Optimized machine code
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   ↓
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Reuse until guard fails
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;h3 id=&quot;key-features&quot;&gt;Key Features&lt;a class=&quot;zola-anchor&quot; href=&quot;#key-features&quot; aria-label=&quot;Anchor link for: key-features&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Dynamic graph building, static optimization afterward.&lt;&#x2F;li&gt;
+&lt;li&gt;Guarded execution: retrace when shape or branch changes.&lt;&#x2F;li&gt;
+&lt;li&gt;Caching of compiled variants.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;backward-graph-construction&quot;&gt;Backward Graph Construction&lt;a class=&quot;zola-anchor&quot; href=&quot;#backward-graph-construction&quot; aria-label=&quot;Anchor link for: backward-graph-construction&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;p&gt;Backward IR built symbolically:
+$$
+G_b = AD(G_f)
+$$
+No numerical gradients computed until execution.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;optimizer-state&quot;&gt;Optimizer State&lt;a class=&quot;zola-anchor&quot; href=&quot;#optimizer-state&quot; aria-label=&quot;Anchor link for: optimizer-state&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;p&gt;Optimizer represented as a state transition:
+$$
+(\theta&#x27;, s&#x27;) = Update(\theta, s, \nabla_\theta L)
+$$
+Mutated in-place in PyTorch’s imperative semantics.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;4-source-transformation-hybrid-compile-from-code&quot;&gt;4. Source-Transformation Hybrid (Compile-From-Code)&lt;a class=&quot;zola-anchor&quot; href=&quot;#4-source-transformation-hybrid-compile-from-code&quot; aria-label=&quot;Anchor link for: 4-source-transformation-hybrid-compile-from-code&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Used in &lt;strong&gt;JAX&#x2F;XLA, TensorFlow XLA, MLIR AOTAutograd&lt;&#x2F;strong&gt;.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;process-1&quot;&gt;Process&lt;a class=&quot;zola-anchor&quot; href=&quot;#process-1&quot; aria-label=&quot;Anchor link for: process-1&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Symbolic Compilation&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Analyze pure function &lt;code&gt;train_step(params, x, y)&lt;&#x2F;code&gt; symbolically.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Automatic Differentiation&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Compute gradients at IR level.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Compilation&lt;&#x2F;strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Optimize + lower to machine code once.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Pure Function
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   ↓
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;HLO &#x2F; MLIR IR (forward + backward fused)
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   ↓
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;XLA &#x2F; LLVM backend
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   ↓
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Optimized executable
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;h3 id=&quot;properties&quot;&gt;Properties&lt;a class=&quot;zola-anchor&quot; href=&quot;#properties&quot; aria-label=&quot;Anchor link for: properties&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Optimizers are pure functions:
+$$
+(\theta&#x27;, s&#x27;) = O(\theta, s, g)
+$$&lt;&#x2F;li&gt;
+&lt;li&gt;One compiled binary handles all iterations.&lt;&#x2F;li&gt;
+&lt;li&gt;Symbolic ops (&lt;code&gt;cond&lt;&#x2F;code&gt;, &lt;code&gt;while&lt;&#x2F;code&gt;) capture dynamic control flow.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;advantages-1&quot;&gt;Advantages&lt;a class=&quot;zola-anchor&quot; href=&quot;#advantages-1&quot; aria-label=&quot;Anchor link for: advantages-1&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Compile once, run many times.&lt;&#x2F;li&gt;
+&lt;li&gt;Shape polymorphism through symbolic dimensions.&lt;&#x2F;li&gt;
+&lt;li&gt;Maximal optimization potential.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;disadvantages-1&quot;&gt;Disadvantages&lt;a class=&quot;zola-anchor&quot; href=&quot;#disadvantages-1&quot; aria-label=&quot;Anchor link for: disadvantages-1&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Requires pure, side-effect-free code.&lt;&#x2F;li&gt;
+&lt;li&gt;Longer initial compile time.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;5-dynamic-behavior-handling&quot;&gt;5. Dynamic Behavior Handling&lt;a class=&quot;zola-anchor&quot; href=&quot;#5-dynamic-behavior-handling&quot; aria-label=&quot;Anchor link for: 5-dynamic-behavior-handling&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Dynamic Feature&lt;&#x2F;th&gt;&lt;th&gt;Execution-Based&lt;&#x2F;th&gt;&lt;th&gt;Source-Transformation&lt;&#x2F;th&gt;&lt;th&gt;Static&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Branching&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Records one path, guards + retrace&lt;&#x2F;td&gt;&lt;td&gt;Encodes all paths (&lt;code&gt;cond&lt;&#x2F;code&gt;)&lt;&#x2F;td&gt;&lt;td&gt;Unsupported&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Randomness&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Retrace or seed input&lt;&#x2F;td&gt;&lt;td&gt;RNG state as input&lt;&#x2F;td&gt;&lt;td&gt;Unsupported&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Shape polymorphism&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Shape guards + retrace&lt;&#x2F;td&gt;&lt;td&gt;Symbolic dimensions&lt;&#x2F;td&gt;&lt;td&gt;Static shapes only&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Control flow&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Runtime guards&lt;&#x2F;td&gt;&lt;td&gt;Symbolic ops (&lt;code&gt;while&lt;&#x2F;code&gt;, &lt;code&gt;cond&lt;&#x2F;code&gt;)&lt;&#x2F;td&gt;&lt;td&gt;Fixed&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Python dynamism&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Allowed&lt;&#x2F;td&gt;&lt;td&gt;Disallowed&lt;&#x2F;td&gt;&lt;td&gt;Disallowed&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;6-compilation-and-caching-costs&quot;&gt;6. Compilation and Caching Costs&lt;a class=&quot;zola-anchor&quot; href=&quot;#6-compilation-and-caching-costs&quot; aria-label=&quot;Anchor link for: 6-compilation-and-caching-costs&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Property&lt;&#x2F;th&gt;&lt;th&gt;Static&lt;&#x2F;th&gt;&lt;th&gt;Execution-Based&lt;&#x2F;th&gt;&lt;th&gt;Source-Transformation&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Number of compiles&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;1&lt;&#x2F;td&gt;&lt;td&gt;Variable (depends on guards)&lt;&#x2F;td&gt;&lt;td&gt;1&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;When compiled&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Before execution&lt;&#x2F;td&gt;&lt;td&gt;On first execution of each variant&lt;&#x2F;td&gt;&lt;td&gt;Before execution&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Reuse&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Full reuse&lt;&#x2F;td&gt;&lt;td&gt;Cached by (shape, dtype, branch)&lt;&#x2F;td&gt;&lt;td&gt;Cached by signature&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Flexibility&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Low&lt;&#x2F;td&gt;&lt;td&gt;High&lt;&#x2F;td&gt;&lt;td&gt;Medium&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Compile time&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Long, once&lt;&#x2F;td&gt;&lt;td&gt;Medium, possibly many&lt;&#x2F;td&gt;&lt;td&gt;Long, once&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Runtime cost&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Minimal&lt;&#x2F;td&gt;&lt;td&gt;Low after warm-up&lt;&#x2F;td&gt;&lt;td&gt;Minimal&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;p&gt;Execution-based systems may retrace multiple times, producing several compiled binaries:&lt;&#x2F;p&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Cache:
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; ├─ Key(shape=32x32, branch=A) → compiled_graph_1
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt; ├─ Key(shape=64x64, branch=B) → compiled_graph_2
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Source-transform systems produce exactly one.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;7-training-timeline-visualization&quot;&gt;7. Training Timeline Visualization&lt;a class=&quot;zola-anchor&quot; href=&quot;#7-training-timeline-visualization&quot; aria-label=&quot;Anchor link for: 7-training-timeline-visualization&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Iteration →
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;|----------------------------------------------→ time
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Static:
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   [Compile once]  [Execute binary many times]
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Execution-Based:
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   [Trace + Compile once]  [Run compiled binary]
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   [Retrace if guard fails → recompile]
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Source-Transform:
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;   [Symbolic compile once]  [Run binary many times]
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;8-conceptual-summary&quot;&gt;8. Conceptual Summary&lt;a class=&quot;zola-anchor&quot; href=&quot;#8-conceptual-summary&quot; aria-label=&quot;Anchor link for: 8-conceptual-summary&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Category&lt;&#x2F;th&gt;&lt;th&gt;Static&lt;&#x2F;th&gt;&lt;th&gt;Execution-Based&lt;&#x2F;th&gt;&lt;th&gt;Source-Transformation&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Graph construction&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Predefined IR&lt;&#x2F;td&gt;&lt;td&gt;Runtime tracing&lt;&#x2F;td&gt;&lt;td&gt;Symbolic compilation&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Backward creation&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Predefined or AOT&lt;&#x2F;td&gt;&lt;td&gt;Symbolic AD of traced IR&lt;&#x2F;td&gt;&lt;td&gt;Symbolic AD at compile time&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Dynamic support&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;None&lt;&#x2F;td&gt;&lt;td&gt;Guards + retrace&lt;&#x2F;td&gt;&lt;td&gt;Symbolic ops&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Optimizer state&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Static updates&lt;&#x2F;td&gt;&lt;td&gt;Mutable buffers&lt;&#x2F;td&gt;&lt;td&gt;Functional updates&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Fidelity to runtime&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Exact but rigid&lt;&#x2F;td&gt;&lt;td&gt;Faithful to executed path&lt;&#x2F;td&gt;&lt;td&gt;Semantically equivalent&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Recompilation&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Never&lt;&#x2F;td&gt;&lt;td&gt;When guards fail&lt;&#x2F;td&gt;&lt;td&gt;Rare&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Best use&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Inference&lt;&#x2F;td&gt;&lt;td&gt;Research&#x2F;training&lt;&#x2F;td&gt;&lt;td&gt;Production training&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;9-ascii-conceptual-diagram&quot;&gt;9. ASCII Conceptual Diagram&lt;a class=&quot;zola-anchor&quot; href=&quot;#9-ascii-conceptual-diagram&quot; aria-label=&quot;Anchor link for: 9-ascii-conceptual-diagram&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;                 ┌───────────────────────┐
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;                 │ Static Compilation    │
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;                 │  (ONNX, IREE, TF)     │
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;                 └──────────┬────────────┘
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;                            │
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;      ┌─────────────────────┼──────────────────────┐
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;      │                     │                      │
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;┌───────────────┐    ┌────────────────┐     ┌────────────────────┐
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;│ Execution-     │    │ Source-        │     │ Fully Dynamic      │
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;│ Based Hybrid   │    │ Transform      │     │ (Eager, No Compile)│
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;│ (PyTorch 2.0)  │    │ (JAX&#x2F;XLA)      │     │ (Old PyTorch)      │
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;└──────┬─────────┘    └────────┬───────┘     └──────────┬────────┘
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;       │                       │                        │
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Run Once → Trace → Compile → Cache      Symbolic Compile Once → Run
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;       │                       │                        │
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;Multiple variants         One static binary        No global optimization
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;hr &#x2F;&gt;
+&lt;h2 id=&quot;10-references&quot;&gt;10. References&lt;a class=&quot;zola-anchor&quot; href=&quot;#10-references&quot; aria-label=&quot;Anchor link for: 10-references&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;ol&gt;
+&lt;li&gt;PyTorch 2.0 Compiler Internals — https:&#x2F;&#x2F;pytorch.org&#x2F;get-started&#x2F;pytorch-2.0&#x2F;&lt;&#x2F;li&gt;
+&lt;li&gt;JAX and XLA Compilation — https:&#x2F;&#x2F;jax.readthedocs.io&lt;&#x2F;li&gt;
+&lt;li&gt;TensorFlow XLA — https:&#x2F;&#x2F;www.tensorflow.org&#x2F;xla&lt;&#x2F;li&gt;
+&lt;li&gt;MLIR AOT Autodiff RFC — https:&#x2F;&#x2F;mlir.llvm.org&lt;&#x2F;li&gt;
+&lt;li&gt;Inductor + AOTAutograd Architecture Notes, PyTorch Core (2023)&lt;&#x2F;li&gt;
+&lt;li&gt;IREE Compiler Documentation — https:&#x2F;&#x2F;iree.dev&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;hr &#x2F;&gt;
+&lt;p&gt;&lt;strong&gt;Summary:&lt;&#x2F;strong&gt;&lt;br &#x2F;&gt;
+Static compilation predefines all computation; execution-based hybrid tracing compiles what actually happens dynamically; source-transformation statically compiles what could happen symbolically. Training workloads balance flexibility and performance through hybridization: dynamic in definition, static in optimization.&lt;&#x2F;p&gt;
+</content>
+	</entry>
+	<entry xml:lang="en">
 		<title>Speculative Duplication and Cost Modeling in MLIR</title>
 		<published>2025-10-06T00:00:00+00:00</published>
 		<updated>2025-10-07T00:00:00+00:00</updated>

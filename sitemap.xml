@@ -57,6 +57,10 @@
         <lastmod>2025-10-02</lastmod>
     </url>
     <url>
+        <loc>https://josephbak.github.io/notes/static-dynamic-hybrid-graph-compilation/</loc>
+        <lastmod>2025-10-14</lastmod>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/posts/</loc>
     </url>
     <url>
@@ -69,6 +73,9 @@
         <loc>https://josephbak.github.io/tags/affine/</loc>
     </url>
     <url>
+        <loc>https://josephbak.github.io/tags/aot-autograd/</loc>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/tags/category-theory/</loc>
     </url>
     <url>
@@ -78,6 +85,9 @@
         <loc>https://josephbak.github.io/tags/graph/</loc>
     </url>
     <url>
+        <loc>https://josephbak.github.io/tags/jax/</loc>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/tags/linalg/</loc>
     </url>
     <url>
@@ -85,6 +95,15 @@
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/mlir/</loc>
+    </url>
+    <url>
+        <loc>https://josephbak.github.io/tags/pytorch/</loc>
+    </url>
+    <url>
+        <loc>https://josephbak.github.io/tags/static/</loc>
+    </url>
+    <url>
+        <loc>https://josephbak.github.io/tags/training-graphs/</loc>
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/transform-dialect/</loc>

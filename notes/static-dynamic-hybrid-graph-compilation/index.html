@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  
+  
+    
+  
+  <meta name="description" content="A math-first explanation of how static, execution-based hybrid, and source-transformation hybrid graph compilation differ during training and inference.">
+
+  <title>Dynamic, Hybrid, and Static Graphs in Deep Learning Compilers</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="https://josephbak.github.io/img/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://josephbak.github.io/img/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://josephbak.github.io/img/apple-touch-icon.png">
+  
+  <style>
+
+  /* light mode colors */
+  body {
+    --primary-color: #5871a2;
+    --primary-pale-color: #5871a233;
+    --primary-decoration-color: #5871a210;
+    --bg-color: #ffffff;
+    --text-color: #2f3030;
+    --text-pale-color: #767676;
+    --text-decoration-color: #a9a9a9;
+    --highlight-mark-color: #5f75b020;
+
+    --callout-note-color: #5871a2;
+    --callout-tip-color: #268556;
+    --callout-important-color: #885fc9;
+    --callout-warning-color: #ab6632;
+    --callout-caution-color: #c64e4e;
+  }
+
+  /* dark mode colors */
+  body.dark {
+    --primary-color: #6f8fd1;
+    --primary-pale-color: #6f8fd166;
+    --primary-decoration-color: #6f8fd112;
+    --bg-color: #1c1c1c;
+    --text-color: #c1c1c1;
+    --text-pale-color: #848484;
+    --text-decoration-color: #5f5f5f;
+    --highlight-mark-color: #8296cb3b;
+
+    --callout-note-color: #6f8fd1;
+    --callout-tip-color: #47976f;
+    --callout-important-color: #9776cd;
+    --callout-warning-color: #ad7a52;
+    --callout-caution-color: #d06161;
+  }
+
+  /* typography */
+  body {
+    --main-font: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --code-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --homepage-max-width: 768px;
+    --main-max-width: 768px;
+    --avatar-size: 60px;
+    --font-size: 16px;
+    --line-height: 1.75;
+    --img-border-radius: 0px;
+    --detail-border-radius: 0px;
+    --dark-mode-img-brightness: 0.75;
+    --dark-mode-chart-brightness: 0.75;
+    --inline-code-border-radius: 2px;
+    --inline-code-bg-color: var(--primary-decoration-color);
+    --block-code-border-radius: 0px;
+    --block-code-border-color: var(--primary-color);
+    --detail-border-color: var(--primary-color);
+  }
+
+</style>
+
+  <link rel="stylesheet" href="https://josephbak.github.io/main.css">
+  
+
+<link id="hl" rel="stylesheet" type="text/css" href="/hl-light.css" />
+
+
+
+  
+</head>
+
+<body class="post">
+  
+  <script>
+    const theme = sessionStorage.getItem('theme');
+    const match = window.matchMedia("(prefers-color-scheme: dark)").matches
+    if ((theme && theme == 'dark') || (!theme && match)) {
+      document.body.classList.add('dark');
+      const hl = document.querySelector('link#hl');
+      if (hl) hl.href = 'https://josephbak.github.io/hl-dark.css';
+    }
+  </script>
+  
+  
+<div id="wrapper">
+  <div id="blank"></div>
+  <aside>
+    
+    
+    <nav>
+      <ul>
+        
+        <li>
+          <a class="h2" href="#1-computation-graphs-formal-basis">1. Computation Graphs: Formal Basis</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#2-static-graph-compilation">2. Static Graph Compilation</a>
+          
+          <ul>
+            
+            <li>
+              <a class="h3" href="#definition">Definition</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#workflow-example-onnx-tensorflow-graph-mode-iree">Workflow Example (ONNX, TensorFlow Graph Mode, IREE)</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#advantages">Advantages</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#disadvantages">Disadvantages</a>
+            </li>
+            
+          </ul>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#3-execution-based-hybrid-trace-then-compile">3. Execution-Based Hybrid (Trace-Then-Compile)</a>
+          
+          <ul>
+            
+            <li>
+              <a class="h3" href="#process">Process</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#key-features">Key Features</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#backward-graph-construction">Backward Graph Construction</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#optimizer-state">Optimizer State</a>
+            </li>
+            
+          </ul>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#4-source-transformation-hybrid-compile-from-code">4. Source-Transformation Hybrid (Compile-From-Code)</a>
+          
+          <ul>
+            
+            <li>
+              <a class="h3" href="#process-1">Process</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#properties">Properties</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#advantages-1">Advantages</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#disadvantages-1">Disadvantages</a>
+            </li>
+            
+          </ul>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#5-dynamic-behavior-handling">5. Dynamic Behavior Handling</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#6-compilation-and-caching-costs">6. Compilation and Caching Costs</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#7-training-timeline-visualization">7. Training Timeline Visualization</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#8-conceptual-summary">8. Conceptual Summary</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#9-ascii-conceptual-diagram">9. ASCII Conceptual Diagram</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#10-references">10. References</a>
+          
+        </li>
+        
+      </ul>
+    </nav>
+    
+    
+    <button id="back-to-top" aria-label="back to top">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-arrow-up"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+
+    </button>
+    
+  </aside>
+  <main>
+    
+<header>
+  <nav>
+    <a id="back-link" href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts">← Back</a>
+  </nav>
+</header>
+
+
+    <div>
+      
+      
+      
+      
+      <div id="copy-cfg" style="display: none;" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+"></div>
+      
+      <article class="prose">
+        <h1>Dynamic, Hybrid, and Static Graphs in Deep Learning Compilers</h1>
+        <div id="post-info">
+          <div id="date">
+            <span id="publish">Oct 8, 2025</span>
+            <span>Updated on <span id="updated">Oct 14, 2025</span></span>
+            </div>
+
+          
+          <div id="tags">
+            <a class="instant" href="https://josephbak.github.io//tags/compilers"><span>#</span>compilers</a><a class="instant" href="https://josephbak.github.io//tags/mlir"><span>#</span>mlir</a><a class="instant" href="https://josephbak.github.io//tags/jax"><span>#</span>jax</a><a class="instant" href="https://josephbak.github.io//tags/pytorch"><span>#</span>pytorch</a><a class="instant" href="https://josephbak.github.io//tags/training-graphs"><span>#</span>training-graphs</a><a class="instant" href="https://josephbak.github.io//tags/static"><span>#</span>static</a><a class="instant" href="https://josephbak.github.io//tags/aot-autograd"><span>#</span>aot-autograd</a>
+          </div>
+          
+        </div>
+
+        
+        
+
+        
+
+        <!-- KaTeX includes -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
+<script>
+ document.addEventListener("DOMContentLoaded", function() {
+ renderMathInElement(document.body, {
+ delimiters: [
+ {left: "$$", right: "$$", display: true},
+ {left: "\[", right: "\]", display: true},
+ {left: "$", right: "$", display: false},
+ {left: "\(", right: "\)", display: false}
+ ],
+ throwOnError: false
+ });
+ });
+</script>
+<p><em>A detailed note comparing static, dynamic, and hybrid (execution-based and source-transformation) graph construction in modern deep learning compilers.</em></p>
+<hr />
+<h2 id="1-computation-graphs-formal-basis">1. Computation Graphs: Formal Basis<a class="zola-anchor" href="#1-computation-graphs-formal-basis" aria-label="Anchor link for: 1-computation-graphs-formal-basis" style="visibility: hidden;"></a>
+</h2>
+<p>Every deep learning model can be expressed as a <strong>computational graph</strong></p>
+<p>$$
+G = (V, E)
+$$</p>
+<p>where:</p>
+<ul>
+<li>$V$: operations (e.g., matmul, relu, add)</li>
+<li>$E$: data dependencies</li>
+</ul>
+<p>During training, two subgraphs exist:</p>
+<ol>
+<li>Forward graph: $G_f$, computing $y = f_\theta(x)$</li>
+<li>Backward graph: $G_b$, computing gradients $\nabla_\theta L = \frac{\partial L(f_\theta(x))}{\partial \theta}$</li>
+</ol>
+<p>Combined:
+$$
+G_{train} = G_f \cup G_b
+$$</p>
+<hr />
+<h2 id="2-static-graph-compilation">2. Static Graph Compilation<a class="zola-anchor" href="#2-static-graph-compilation" aria-label="Anchor link for: 2-static-graph-compilation" style="visibility: hidden;"></a>
+</h2>
+<h3 id="definition">Definition<a class="zola-anchor" href="#definition" aria-label="Anchor link for: definition" style="visibility: hidden;"></a>
+</h3>
+<p>A <strong>static graph</strong> is built and optimized <strong>before any execution</strong>.<br />
+It represents <em>all</em> possible computations and data flows as a fixed IR.</p>
+<p>Formally:
+$$
+\text{Compile}(f) = G_{static} \xrightarrow[]{\text{optimize}} \text{binary}
+$$</p>
+<p>The graph is immutable at runtime—no retracing or rebuilding.</p>
+<h3 id="workflow-example-onnx-tensorflow-graph-mode-iree">Workflow Example (ONNX, TensorFlow Graph Mode, IREE)<a class="zola-anchor" href="#workflow-example-onnx-tensorflow-graph-mode-iree" aria-label="Anchor link for: workflow-example-onnx-tensorflow-graph-mode-iree" style="visibility: hidden;"></a>
+</h3>
+<pre class="z-code"><code><span class="z-text z-plain">Python model
+</span><span class="z-text z-plain">   ↓ (convert to static IR)
+</span><span class="z-text z-plain">GraphDef / MLIR / ONNX IR
+</span><span class="z-text z-plain">   ↓ optimization passes (fusion, CSE, folding)
+</span><span class="z-text z-plain">LLVM / GPU code
+</span><span class="z-text z-plain">   ↓
+</span><span class="z-text z-plain">Executable binary
+</span></code></pre>
+<h3 id="advantages">Advantages<a class="zola-anchor" href="#advantages" aria-label="Anchor link for: advantages" style="visibility: hidden;"></a>
+</h3>
+<ul>
+<li>Full ahead-of-time (AOT) optimization</li>
+<li>Deterministic performance and memory planning</li>
+<li>Ideal for <strong>inference</strong></li>
+</ul>
+<h3 id="disadvantages">Disadvantages<a class="zola-anchor" href="#disadvantages" aria-label="Anchor link for: disadvantages" style="visibility: hidden;"></a>
+</h3>
+<ul>
+<li>Inflexible to input-dependent control flow</li>
+<li>Harder debugging (no eager execution)</li>
+<li>Not compatible with arbitrary Python dynamism</li>
+</ul>
+<hr />
+<h2 id="3-execution-based-hybrid-trace-then-compile">3. Execution-Based Hybrid (Trace-Then-Compile)<a class="zola-anchor" href="#3-execution-based-hybrid-trace-then-compile" aria-label="Anchor link for: 3-execution-based-hybrid-trace-then-compile" style="visibility: hidden;"></a>
+</h2>
+<p>This is the approach used by <strong>PyTorch 2.0 (Dynamo + AOTAutograd + Inductor)</strong>.</p>
+<h3 id="process">Process<a class="zola-anchor" href="#process" aria-label="Anchor link for: process" style="visibility: hidden;"></a>
+</h3>
+<ol>
+<li><strong>Execution + Tracing</strong>
+<ul>
+<li>Run model once with tracer tensors.</li>
+<li>Record each operation to build a forward graph $G_f$.</li>
+</ul>
+</li>
+<li><strong>Symbolic AD (AOTAutograd)</strong>
+<ul>
+<li>Apply differentiation rules to $G_f$ symbolically to generate $G_b$.</li>
+</ul>
+</li>
+<li><strong>Fusion + Lowering</strong>
+<ul>
+<li>Fuse $G_f$ and $G_b$ → $G_{train}$.</li>
+<li>Lower to MLIR/LLVM → compile.</li>
+</ul>
+</li>
+<li><strong>Caching</strong>
+<ul>
+<li>Cache compiled binaries per guard set (shape, dtype, branch).</li>
+</ul>
+</li>
+</ol>
+<pre class="z-code"><code><span class="z-text z-plain">Python Code
+</span><span class="z-text z-plain">   ↓ run once with tracer
+</span><span class="z-text z-plain">FX IR
+</span><span class="z-text z-plain">   ↓ AOTAutograd
+</span><span class="z-text z-plain">Forward + Backward Graph
+</span><span class="z-text z-plain">   ↓ Inductor / MLIR
+</span><span class="z-text z-plain">Optimized machine code
+</span><span class="z-text z-plain">   ↓
+</span><span class="z-text z-plain">Reuse until guard fails
+</span></code></pre>
+<h3 id="key-features">Key Features<a class="zola-anchor" href="#key-features" aria-label="Anchor link for: key-features" style="visibility: hidden;"></a>
+</h3>
+<ul>
+<li>Dynamic graph building, static optimization afterward.</li>
+<li>Guarded execution: retrace when shape or branch changes.</li>
+<li>Caching of compiled variants.</li>
+</ul>
+<h3 id="backward-graph-construction">Backward Graph Construction<a class="zola-anchor" href="#backward-graph-construction" aria-label="Anchor link for: backward-graph-construction" style="visibility: hidden;"></a>
+</h3>
+<p>Backward IR built symbolically:
+$$
+G_b = AD(G_f)
+$$
+No numerical gradients computed until execution.</p>
+<h3 id="optimizer-state">Optimizer State<a class="zola-anchor" href="#optimizer-state" aria-label="Anchor link for: optimizer-state" style="visibility: hidden;"></a>
+</h3>
+<p>Optimizer represented as a state transition:
+$$
+(\theta', s') = Update(\theta, s, \nabla_\theta L)
+$$
+Mutated in-place in PyTorch’s imperative semantics.</p>
+<hr />
+<h2 id="4-source-transformation-hybrid-compile-from-code">4. Source-Transformation Hybrid (Compile-From-Code)<a class="zola-anchor" href="#4-source-transformation-hybrid-compile-from-code" aria-label="Anchor link for: 4-source-transformation-hybrid-compile-from-code" style="visibility: hidden;"></a>
+</h2>
+<p>Used in <strong>JAX/XLA, TensorFlow XLA, MLIR AOTAutograd</strong>.</p>
+<h3 id="process-1">Process<a class="zola-anchor" href="#process-1" aria-label="Anchor link for: process-1" style="visibility: hidden;"></a>
+</h3>
+<ol>
+<li><strong>Symbolic Compilation</strong>
+<ul>
+<li>Analyze pure function <code>train_step(params, x, y)</code> symbolically.</li>
+</ul>
+</li>
+<li><strong>Automatic Differentiation</strong>
+<ul>
+<li>Compute gradients at IR level.</li>
+</ul>
+</li>
+<li><strong>Compilation</strong>
+<ul>
+<li>Optimize + lower to machine code once.</li>
+</ul>
+</li>
+</ol>
+<pre class="z-code"><code><span class="z-text z-plain">Pure Function
+</span><span class="z-text z-plain">   ↓
+</span><span class="z-text z-plain">HLO / MLIR IR (forward + backward fused)
+</span><span class="z-text z-plain">   ↓
+</span><span class="z-text z-plain">XLA / LLVM backend
+</span><span class="z-text z-plain">   ↓
+</span><span class="z-text z-plain">Optimized executable
+</span></code></pre>
+<h3 id="properties">Properties<a class="zola-anchor" href="#properties" aria-label="Anchor link for: properties" style="visibility: hidden;"></a>
+</h3>
+<ul>
+<li>Optimizers are pure functions:
+$$
+(\theta', s') = O(\theta, s, g)
+$$</li>
+<li>One compiled binary handles all iterations.</li>
+<li>Symbolic ops (<code>cond</code>, <code>while</code>) capture dynamic control flow.</li>
+</ul>
+<h3 id="advantages-1">Advantages<a class="zola-anchor" href="#advantages-1" aria-label="Anchor link for: advantages-1" style="visibility: hidden;"></a>
+</h3>
+<ul>
+<li>Compile once, run many times.</li>
+<li>Shape polymorphism through symbolic dimensions.</li>
+<li>Maximal optimization potential.</li>
+</ul>
+<h3 id="disadvantages-1">Disadvantages<a class="zola-anchor" href="#disadvantages-1" aria-label="Anchor link for: disadvantages-1" style="visibility: hidden;"></a>
+</h3>
+<ul>
+<li>Requires pure, side-effect-free code.</li>
+<li>Longer initial compile time.</li>
+</ul>
+<hr />
+<h2 id="5-dynamic-behavior-handling">5. Dynamic Behavior Handling<a class="zola-anchor" href="#5-dynamic-behavior-handling" aria-label="Anchor link for: 5-dynamic-behavior-handling" style="visibility: hidden;"></a>
+</h2>
+<table><thead><tr><th>Dynamic Feature</th><th>Execution-Based</th><th>Source-Transformation</th><th>Static</th></tr></thead><tbody>
+<tr><td><strong>Branching</strong></td><td>Records one path, guards + retrace</td><td>Encodes all paths (<code>cond</code>)</td><td>Unsupported</td></tr>
+<tr><td><strong>Randomness</strong></td><td>Retrace or seed input</td><td>RNG state as input</td><td>Unsupported</td></tr>
+<tr><td><strong>Shape polymorphism</strong></td><td>Shape guards + retrace</td><td>Symbolic dimensions</td><td>Static shapes only</td></tr>
+<tr><td><strong>Control flow</strong></td><td>Runtime guards</td><td>Symbolic ops (<code>while</code>, <code>cond</code>)</td><td>Fixed</td></tr>
+<tr><td><strong>Python dynamism</strong></td><td>Allowed</td><td>Disallowed</td><td>Disallowed</td></tr>
+</tbody></table>
+<hr />
+<h2 id="6-compilation-and-caching-costs">6. Compilation and Caching Costs<a class="zola-anchor" href="#6-compilation-and-caching-costs" aria-label="Anchor link for: 6-compilation-and-caching-costs" style="visibility: hidden;"></a>
+</h2>
+<table><thead><tr><th>Property</th><th>Static</th><th>Execution-Based</th><th>Source-Transformation</th></tr></thead><tbody>
+<tr><td><strong>Number of compiles</strong></td><td>1</td><td>Variable (depends on guards)</td><td>1</td></tr>
+<tr><td><strong>When compiled</strong></td><td>Before execution</td><td>On first execution of each variant</td><td>Before execution</td></tr>
+<tr><td><strong>Reuse</strong></td><td>Full reuse</td><td>Cached by (shape, dtype, branch)</td><td>Cached by signature</td></tr>
+<tr><td><strong>Flexibility</strong></td><td>Low</td><td>High</td><td>Medium</td></tr>
+<tr><td><strong>Compile time</strong></td><td>Long, once</td><td>Medium, possibly many</td><td>Long, once</td></tr>
+<tr><td><strong>Runtime cost</strong></td><td>Minimal</td><td>Low after warm-up</td><td>Minimal</td></tr>
+</tbody></table>
+<p>Execution-based systems may retrace multiple times, producing several compiled binaries:</p>
+<pre class="z-code"><code><span class="z-text z-plain">Cache:
+</span><span class="z-text z-plain"> ├─ Key(shape=32x32, branch=A) → compiled_graph_1
+</span><span class="z-text z-plain"> ├─ Key(shape=64x64, branch=B) → compiled_graph_2
+</span></code></pre>
+<p>Source-transform systems produce exactly one.</p>
+<hr />
+<h2 id="7-training-timeline-visualization">7. Training Timeline Visualization<a class="zola-anchor" href="#7-training-timeline-visualization" aria-label="Anchor link for: 7-training-timeline-visualization" style="visibility: hidden;"></a>
+</h2>
+<pre class="z-code"><code><span class="z-text z-plain">Iteration →
+</span><span class="z-text z-plain">|----------------------------------------------→ time
+</span><span class="z-text z-plain">
+</span><span class="z-text z-plain">Static:
+</span><span class="z-text z-plain">   [Compile once]  [Execute binary many times]
+</span><span class="z-text z-plain">
+</span><span class="z-text z-plain">Execution-Based:
+</span><span class="z-text z-plain">   [Trace + Compile once]  [Run compiled binary]
+</span><span class="z-text z-plain">   [Retrace if guard fails → recompile]
+</span><span class="z-text z-plain">
+</span><span class="z-text z-plain">Source-Transform:
+</span><span class="z-text z-plain">   [Symbolic compile once]  [Run binary many times]
+</span></code></pre>
+<hr />
+<h2 id="8-conceptual-summary">8. Conceptual Summary<a class="zola-anchor" href="#8-conceptual-summary" aria-label="Anchor link for: 8-conceptual-summary" style="visibility: hidden;"></a>
+</h2>
+<table><thead><tr><th>Category</th><th>Static</th><th>Execution-Based</th><th>Source-Transformation</th></tr></thead><tbody>
+<tr><td><strong>Graph construction</strong></td><td>Predefined IR</td><td>Runtime tracing</td><td>Symbolic compilation</td></tr>
+<tr><td><strong>Backward creation</strong></td><td>Predefined or AOT</td><td>Symbolic AD of traced IR</td><td>Symbolic AD at compile time</td></tr>
+<tr><td><strong>Dynamic support</strong></td><td>None</td><td>Guards + retrace</td><td>Symbolic ops</td></tr>
+<tr><td><strong>Optimizer state</strong></td><td>Static updates</td><td>Mutable buffers</td><td>Functional updates</td></tr>
+<tr><td><strong>Fidelity to runtime</strong></td><td>Exact but rigid</td><td>Faithful to executed path</td><td>Semantically equivalent</td></tr>
+<tr><td><strong>Recompilation</strong></td><td>Never</td><td>When guards fail</td><td>Rare</td></tr>
+<tr><td><strong>Best use</strong></td><td>Inference</td><td>Research/training</td><td>Production training</td></tr>
+</tbody></table>
+<hr />
+<h2 id="9-ascii-conceptual-diagram">9. ASCII Conceptual Diagram<a class="zola-anchor" href="#9-ascii-conceptual-diagram" aria-label="Anchor link for: 9-ascii-conceptual-diagram" style="visibility: hidden;"></a>
+</h2>
+<pre class="z-code"><code><span class="z-text z-plain">                 ┌───────────────────────┐
+</span><span class="z-text z-plain">                 │ Static Compilation    │
+</span><span class="z-text z-plain">                 │  (ONNX, IREE, TF)     │
+</span><span class="z-text z-plain">                 └──────────┬────────────┘
+</span><span class="z-text z-plain">                            │
+</span><span class="z-text z-plain">      ┌─────────────────────┼──────────────────────┐
+</span><span class="z-text z-plain">      │                     │                      │
+</span><span class="z-text z-plain">┌───────────────┐    ┌────────────────┐     ┌────────────────────┐
+</span><span class="z-text z-plain">│ Execution-     │    │ Source-        │     │ Fully Dynamic      │
+</span><span class="z-text z-plain">│ Based Hybrid   │    │ Transform      │     │ (Eager, No Compile)│
+</span><span class="z-text z-plain">│ (PyTorch 2.0)  │    │ (JAX/XLA)      │     │ (Old PyTorch)      │
+</span><span class="z-text z-plain">└──────┬─────────┘    └────────┬───────┘     └──────────┬────────┘
+</span><span class="z-text z-plain">       │                       │                        │
+</span><span class="z-text z-plain">Run Once → Trace → Compile → Cache      Symbolic Compile Once → Run
+</span><span class="z-text z-plain">       │                       │                        │
+</span><span class="z-text z-plain">Multiple variants         One static binary        No global optimization
+</span></code></pre>
+<hr />
+<h2 id="10-references">10. References<a class="zola-anchor" href="#10-references" aria-label="Anchor link for: 10-references" style="visibility: hidden;"></a>
+</h2>
+<ol>
+<li>PyTorch 2.0 Compiler Internals — https://pytorch.org/get-started/pytorch-2.0/</li>
+<li>JAX and XLA Compilation — https://jax.readthedocs.io</li>
+<li>TensorFlow XLA — https://www.tensorflow.org/xla</li>
+<li>MLIR AOT Autodiff RFC — https://mlir.llvm.org</li>
+<li>Inductor + AOTAutograd Architecture Notes, PyTorch Core (2023)</li>
+<li>IREE Compiler Documentation — https://iree.dev</li>
+</ol>
+<hr />
+<p><strong>Summary:</strong><br />
+Static compilation predefines all computation; execution-based hybrid tracing compiles what actually happens dynamically; source-transformation statically compiles what could happen symbolically. Training workloads balance flexibility and performance through hybridization: dynamic in definition, static in optimization.</p>
+
+      </article>
+
+      
+      
+
+      
+      
+    </div>
+
+    
+
+
+<footer>
+  <div class="left">
+    <div class="copyright">
+      © 2025 &lt;joseph bak&gt;
+      
+      <span>|</span>
+      Built with <a href="https://www.getzola.org" rel="noreferrer" target="_blank">zola</a> and <a href="https://github.com/isunjn/serene" rel="noreferrer" target="_blank">serene</a>
+      
+    </div>
+  </div>
+
+  <div class="right">
+    
+    
+      
+    
+    
+    <a id="rss-btn" href="https://josephbak.github.io/posts/feed.xml">RSS</a>
+    
+    
+
+    
+    
+    
+    <button id="theme-toggle" aria-label="theme switch">
+      <span class="moon-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M10 7C10 10.866 13.134 14 17 14C18.9584 14 20.729 13.1957 21.9995 11.8995C22 11.933 22 11.9665 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C12.0335 2 12.067 2 12.1005 2.00049C10.8043 3.27098 10 5.04157 10 7ZM4 12C4 16.4183 7.58172 20 12 20C15.0583 20 17.7158 18.2839 19.062 15.7621C18.3945 15.9187 17.7035 16 17 16C12.0294 16 8 11.9706 8 7C8 6.29648 8.08133 5.60547 8.2379 4.938C5.71611 6.28423 4 8.9417 4 12Z" fill="currentColor"></path></svg>
+</span>
+      <span class="sun-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M12 18C8.68629 18 6 15.3137 6 12C6 8.68629 8.68629 6 12 6C15.3137 6 18 8.68629 18 12C18 15.3137 15.3137 18 12 18ZM12 16C14.2091 16 16 14.2091 16 12C16 9.79086 14.2091 8 12 8C9.79086 8 8 9.79086 8 12C8 14.2091 9.79086 16 12 16ZM11 1H13V4H11V1ZM11 20H13V23H11V20ZM3.51472 4.92893L4.92893 3.51472L7.05025 5.63604L5.63604 7.05025L3.51472 4.92893ZM16.9497 18.364L18.364 16.9497L20.4853 19.0711L19.0711 20.4853L16.9497 18.364ZM19.0711 3.51472L20.4853 4.92893L18.364 7.05025L16.9497 5.63604L19.0711 3.51472ZM5.63604 16.9497L7.05025 18.364L4.92893 20.4853L3.51472 19.0711L5.63604 16.9497ZM23 11V13H20V11H23ZM4 11V13H1V11H4Z" fill="currentColor"></path></svg>
+</span>
+    </button>
+    
+  </div>
+</footer>
+
+
+
+
+<dialog id="rss-mask">
+  <div>
+    <a href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml">https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml</a>
+    
+    
+    <button autofocus aria-label="copy" data-link="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z" fill="currentColor"></path></svg>
+
+    </button>
+  </div>
+</dialog>
+
+
+
+  </main>
+</div>
+
+  
+<script src="/js/lightense.min.js"></script>
+
+
+  <script src="https://josephbak.github.io/js/main.js"></script>
+</body>
+
+</html>
