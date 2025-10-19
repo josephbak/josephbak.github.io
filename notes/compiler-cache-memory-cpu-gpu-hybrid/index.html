@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  
+  
+    
+  
+  <meta name="description" content="A systems-level overview of general compiler rules and hybrid design principles for optimizing cache and memory performance on modern CPUs and GPUs.">
+
+  <title>Compiler Strategies for Cache- and Memory-Friendly Design Across CPUs and GPUs</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="https://josephbak.github.io/img/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://josephbak.github.io/img/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://josephbak.github.io/img/apple-touch-icon.png">
+  
+  <style>
+
+  /* light mode colors */
+  body {
+    --primary-color: #5871a2;
+    --primary-pale-color: #5871a233;
+    --primary-decoration-color: #5871a210;
+    --bg-color: #ffffff;
+    --text-color: #2f3030;
+    --text-pale-color: #767676;
+    --text-decoration-color: #a9a9a9;
+    --highlight-mark-color: #5f75b020;
+
+    --callout-note-color: #5871a2;
+    --callout-tip-color: #268556;
+    --callout-important-color: #885fc9;
+    --callout-warning-color: #ab6632;
+    --callout-caution-color: #c64e4e;
+  }
+
+  /* dark mode colors */
+  body.dark {
+    --primary-color: #6f8fd1;
+    --primary-pale-color: #6f8fd166;
+    --primary-decoration-color: #6f8fd112;
+    --bg-color: #1c1c1c;
+    --text-color: #c1c1c1;
+    --text-pale-color: #848484;
+    --text-decoration-color: #5f5f5f;
+    --highlight-mark-color: #8296cb3b;
+
+    --callout-note-color: #6f8fd1;
+    --callout-tip-color: #47976f;
+    --callout-important-color: #9776cd;
+    --callout-warning-color: #ad7a52;
+    --callout-caution-color: #d06161;
+  }
+
+  /* typography */
+  body {
+    --main-font: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --code-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --homepage-max-width: 768px;
+    --main-max-width: 768px;
+    --avatar-size: 60px;
+    --font-size: 16px;
+    --line-height: 1.75;
+    --img-border-radius: 0px;
+    --detail-border-radius: 0px;
+    --dark-mode-img-brightness: 0.75;
+    --dark-mode-chart-brightness: 0.75;
+    --inline-code-border-radius: 2px;
+    --inline-code-bg-color: var(--primary-decoration-color);
+    --block-code-border-radius: 0px;
+    --block-code-border-color: var(--primary-color);
+    --detail-border-color: var(--primary-color);
+  }
+
+</style>
+
+  <link rel="stylesheet" href="https://josephbak.github.io/main.css">
+  
+
+<link id="hl" rel="stylesheet" type="text/css" href="/hl-light.css" />
+
+
+
+  
+</head>
+
+<body class="post">
+  
+  <script>
+    const theme = sessionStorage.getItem('theme');
+    const match = window.matchMedia("(prefers-color-scheme: dark)").matches
+    if ((theme && theme == 'dark') || (!theme && match)) {
+      document.body.classList.add('dark');
+      const hl = document.querySelector('link#hl');
+      if (hl) hl.href = 'https://josephbak.github.io/hl-dark.css';
+    }
+  </script>
+  
+  
+<div id="wrapper">
+  <div id="blank"></div>
+  <aside>
+    
+    
+    <nav>
+      <ul>
+        
+        <li>
+          <a class="h2" href="#overview">Overview</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#1-cache-and-memory-friendliness-rules-for-cpus">1. Cache- and Memory-Friendliness Rules for CPUs</a>
+          
+          <ul>
+            
+            <li>
+              <a class="h3" href="#1-1-universal-compiler-principles-for-cpus">1.1 Universal Compiler Principles for CPUs</a>
+            </li>
+            
+          </ul>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#2-memory-hierarchies-and-rules-for-gpus">2. Memory Hierarchies and Rules for GPUs</a>
+          
+          <ul>
+            
+            <li>
+              <a class="h3" href="#2-1-universal-gpu-compiler-rules">2.1 Universal GPU Compiler Rules</a>
+            </li>
+            
+          </ul>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#3-hybrid-compiler-design-unified-ir-for-cpus-and-gpus">3. Hybrid Compiler Design: Unified IR for CPUs and GPUs</a>
+          
+          <ul>
+            
+            <li>
+              <a class="h3" href="#3-1-core-design">3.1 Core Design</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#3-2-lowering-strategies">3.2 Lowering Strategies</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#3-3-scheduling-knobs">3.3 Scheduling Knobs</a>
+            </li>
+            
+            <li>
+              <a class="h3" href="#3-4-autotuning-layer">3.4 Autotuning Layer</a>
+            </li>
+            
+          </ul>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#4-converging-trends">4. Converging Trends</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#references">References</a>
+          
+        </li>
+        
+      </ul>
+    </nav>
+    
+    
+    <button id="back-to-top" aria-label="back to top">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-arrow-up"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+
+    </button>
+    
+  </aside>
+  <main>
+    
+<header>
+  <nav>
+    <a id="back-link" href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts">← Back</a>
+  </nav>
+</header>
+
+
+    <div>
+      
+      
+      
+      
+      <div id="copy-cfg" style="display: none;" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+"></div>
+      
+      <article class="prose">
+        <h1>Compiler Strategies for Cache- and Memory-Friendly Design Across CPUs and GPUs</h1>
+        <div id="post-info">
+          <div id="date">
+            <span id="publish">Oct 18, 2025</span>
+            </div>
+
+          
+          <div id="tags">
+            <a class="instant" href="https://josephbak.github.io//tags/compilers"><span>#</span>compilers</a><a class="instant" href="https://josephbak.github.io//tags/cpu"><span>#</span>cpu</a><a class="instant" href="https://josephbak.github.io//tags/gpu"><span>#</span>gpu</a><a class="instant" href="https://josephbak.github.io//tags/cache-optimization"><span>#</span>cache-optimization</a><a class="instant" href="https://josephbak.github.io//tags/memory-hierarchy"><span>#</span>memory-hierarchy</a><a class="instant" href="https://josephbak.github.io//tags/systems-design"><span>#</span>systems-design</a>
+          </div>
+          
+        </div>
+
+        
+        
+
+        
+
+        <!-- KaTeX includes (inline; requires markdown.render_unsafe = true) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+<hr />
+<h1 id="overview">Overview<a class="zola-anchor" href="#overview" aria-label="Anchor link for: overview" style="visibility: hidden;"></a>
+</h1>
+<p>Modern compilers are increasingly <strong>memory- and cache-aware</strong>, as performance is no longer limited by raw FLOPs (floating-point operations per second) but by <strong>data movement</strong> and <strong>cache locality</strong>. CPUs and GPUs expose radically different memory hierarchies, and compiler strategies must adapt to each while still leveraging shared principles of <em>locality, reuse, and predictability</em>.</p>
+<p>This note outlines:</p>
+<ol>
+<li>General cache and memory friendliness rules for <strong>modern CPUs</strong>.</li>
+<li>Equivalent performance rules for <strong>modern GPUs</strong>.</li>
+<li>A <strong>hybrid compiler design</strong> that targets both architectures from a single intermediate representation (IR).</li>
+</ol>
+<hr />
+<h1 id="1-cache-and-memory-friendliness-rules-for-cpus">1. Cache- and Memory-Friendliness Rules for CPUs<a class="zola-anchor" href="#1-cache-and-memory-friendliness-rules-for-cpus" aria-label="Anchor link for: 1-cache-and-memory-friendliness-rules-for-cpus" style="visibility: hidden;"></a>
+</h1>
+<p>Modern CPUs (Central Processing Units) are latency-oriented and hierarchical. Typical cache layers include:</p>
+<table><thead><tr><th>Level</th><th>Typical Size</th><th>Access Time</th><th>Notes</th></tr></thead><tbody>
+<tr><td><strong>L1</strong></td><td>32–64 KB</td><td>~1 ns</td><td>Split into instruction (I) and data (D) caches</td></tr>
+<tr><td><strong>L2</strong></td><td>256–2048 KB</td><td>~4 ns</td><td>Unified per core</td></tr>
+<tr><td><strong>L3</strong></td><td>4–64 MB</td><td>~10–20 ns</td><td>Shared across cores</td></tr>
+<tr><td><strong>DRAM</strong></td><td>GBs</td><td>~80–120 ns</td><td>Main memory</td></tr>
+</tbody></table>
+<h3 id="1-1-universal-compiler-principles-for-cpus">1.1 Universal Compiler Principles for CPUs<a class="zola-anchor" href="#1-1-universal-compiler-principles-for-cpus" aria-label="Anchor link for: 1-1-universal-compiler-principles-for-cpus" style="visibility: hidden;"></a>
+</h3>
+<table><thead><tr><th>Principle</th><th>Explanation</th><th>Benefit</th></tr></thead><tbody>
+<tr><td><strong>Spatial Locality</strong></td><td>Access contiguous memory (arrays, SoA layouts)</td><td>Fewer cache-line fills</td></tr>
+<tr><td><strong>Temporal Locality</strong></td><td>Reuse recently accessed data</td><td>Higher cache hit rate</td></tr>
+<tr><td><strong>Hot Code Compactness</strong></td><td>Keep hot loops &lt; 8–16 KB to fit in L1I (Instruction Cache)</td><td>Fewer ICACHE misses</td></tr>
+<tr><td><strong>Predictable Branching</strong></td><td>Favor likely branches as fallthrough</td><td>Improves branch predictor accuracy</td></tr>
+<tr><td><strong>Prefetch-Friendly Access</strong></td><td>Stride-1 loops and predictable indexing</td><td>Enables hardware prefetchers</td></tr>
+<tr><td><strong>Loop Tiling / Blocking</strong></td><td>Partition loops so working sets fit in cache</td><td>Reduces cache thrash</td></tr>
+<tr><td><strong>Data Structure Layout</strong></td><td>Use Structure of Arrays (SoA) for vectorized ops</td><td>Improves SIMD (Single Instruction Multiple Data) efficiency</td></tr>
+<tr><td><strong>Quantization and Packing</strong></td><td>Compress frequently accessed values (e.g., thresholds)</td><td>Better cache density</td></tr>
+</tbody></table>
+<p><strong>Compiler Techniques:</strong></p>
+<ul>
+<li>Polyhedral loop optimization and cache tiling (e.g., MLIR affine dialect)</li>
+<li>Function inlining guided by instruction cache budget</li>
+<li>Profile-guided reordering of hot functions</li>
+<li>Prefetch insertion (software prefetch or hardware hinting)</li>
+</ul>
+<p><strong>References:</strong></p>
+<ul>
+<li>Drepper, <em>What Every Programmer Should Know About Memory</em> (2007)</li>
+<li>Fog, <em>Instruction Tables and Cache Optimizations</em> (2018)</li>
+<li>Intel Optimization Manual, vol. 1–3 (2024)</li>
+</ul>
+<hr />
+<h1 id="2-memory-hierarchies-and-rules-for-gpus">2. Memory Hierarchies and Rules for GPUs<a class="zola-anchor" href="#2-memory-hierarchies-and-rules-for-gpus" aria-label="Anchor link for: 2-memory-hierarchies-and-rules-for-gpus" style="visibility: hidden;"></a>
+</h1>
+<p>GPUs (Graphics Processing Units) are throughput-oriented, designed for <strong>massive parallelism</strong> and <strong>bandwidth utilization</strong> rather than latency minimization. A simplified hierarchy:</p>
+<table><thead><tr><th>Memory Type</th><th>Latency</th><th>Scope</th><th>Access</th><th>Notes</th></tr></thead><tbody>
+<tr><td><strong>Registers</strong></td><td>~1 cycle</td><td>Per-thread</td><td>Fastest</td><td>Holds scalars and temporaries</td></tr>
+<tr><td><strong>Shared Memory (L1)</strong></td><td>20–30 ns</td><td>Per-block</td><td>Programmable SRAM</td><td>Manually managed cache</td></tr>
+<tr><td><strong>L2 Cache</strong></td><td>~100 ns</td><td>All SMs</td><td>Automatic</td><td>Shared across chip</td></tr>
+<tr><td><strong>Global Memory (VRAM/HBM)</strong></td><td>300–800 ns</td><td>Device</td><td>Coalesced access needed</td><td></td></tr>
+<tr><td><strong>Host Memory (CPU RAM)</strong></td><td>µs</td><td>Across PCIe/NVLink</td><td>Very high latency</td><td></td></tr>
+</tbody></table>
+<h3 id="2-1-universal-gpu-compiler-rules">2.1 Universal GPU Compiler Rules<a class="zola-anchor" href="#2-1-universal-gpu-compiler-rules" aria-label="Anchor link for: 2-1-universal-gpu-compiler-rules" style="visibility: hidden;"></a>
+</h3>
+<table><thead><tr><th>Principle</th><th>Explanation</th><th>Benefit</th></tr></thead><tbody>
+<tr><td><strong>Memory Coalescing</strong></td><td>Adjacent threads in a warp access consecutive addresses</td><td>Full memory transaction utilization</td></tr>
+<tr><td><strong>Shared Memory Reuse</strong></td><td>Tile reusable data into shared memory</td><td>Reduces global memory traffic</td></tr>
+<tr><td><strong>Warp Uniformity</strong></td><td>All threads in a warp follow same control path</td><td>Prevents divergence serialization</td></tr>
+<tr><td><strong>Predication over Branching</strong></td><td>Replace if/else with arithmetic masks</td><td>Keeps SIMD lanes active</td></tr>
+<tr><td><strong>High Occupancy</strong></td><td>Use few registers &amp; shared memory per thread</td><td>Hides latency by overlapping warps</td></tr>
+<tr><td><strong>Compute–Memory Balance</strong></td><td>Increase arithmetic intensity (FLOPs/byte)</td><td>Hides memory latency</td></tr>
+<tr><td><strong>Explicit Tiling</strong></td><td>Use kernel-level loop tiling &amp; block synchronization</td><td>Improves data reuse and scheduling</td></tr>
+</tbody></table>
+<p><strong>Compiler Techniques:</strong></p>
+<ul>
+<li>Kernel fusion and loop tiling (e.g., MLIR’s GPU dialect)</li>
+<li>Thread-block scheduling with register pressure control</li>
+<li>Warp-level predication lowering</li>
+<li>Autotuning for launch geometry <code>(grid, block, warp)</code></li>
+</ul>
+<p><strong>References:</strong></p>
+<ul>
+<li>NVIDIA CUDA Best Practices Guide (2025)</li>
+<li>AMD ROCm Optimization Guide (2024)</li>
+<li>Volkov, <em>Understanding Latency Hiding on GPUs</em> (2016)</li>
+</ul>
+<hr />
+<h1 id="3-hybrid-compiler-design-unified-ir-for-cpus-and-gpus">3. Hybrid Compiler Design: Unified IR for CPUs and GPUs<a class="zola-anchor" href="#3-hybrid-compiler-design-unified-ir-for-cpus-and-gpus" aria-label="Anchor link for: 3-hybrid-compiler-design-unified-ir-for-cpus-and-gpus" style="visibility: hidden;"></a>
+</h1>
+<p>The goal: <strong>a single intermediate representation (IR)</strong> that expresses control flow, memory access, and parallel structure so it can be lowered to both CPU and GPU backends efficiently.</p>
+<h3 id="3-1-core-design">3.1 Core Design<a class="zola-anchor" href="#3-1-core-design" aria-label="Anchor link for: 3-1-core-design" style="visibility: hidden;"></a>
+</h3>
+<p>A unified IR should model computation as <strong>structured regions with explicit data dependencies</strong>:</p>
+<pre class="z-code"><code><span class="z-text z-plain">forest.apply %X {
+</span><span class="z-text z-plain">  tree.begin %t0
+</span><span class="z-text z-plain">    %n0 = node.split.num  fid=3, thr=0.72
+</span><span class="z-text z-plain">    br_if %n0, label %L1, %L2
+</span><span class="z-text z-plain">  %L1: node.leaf  val=0.13
+</span><span class="z-text z-plain">  %L2: node.leaf  val=-0.02
+</span><span class="z-text z-plain">  tree.end
+</span><span class="z-text z-plain">}
+</span></code></pre>
+<p>This high-level control flow can be specialized differently per backend.</p>
+<h3 id="3-2-lowering-strategies">3.2 Lowering Strategies<a class="zola-anchor" href="#3-2-lowering-strategies" aria-label="Anchor link for: 3-2-lowering-strategies" style="visibility: hidden;"></a>
+</h3>
+<table><thead><tr><th>Phase</th><th>CPU Lowering</th><th>GPU Lowering</th></tr></thead><tbody>
+<tr><td><strong>Control Flow</strong></td><td>Emit branchy code; flatten hot paths</td><td>Use predicated arithmetic; avoid divergence</td></tr>
+<tr><td><strong>Parallelism</strong></td><td>Vectorize (AVX512/SVE) across samples</td><td>Map threads to (sample, tree) grid</td></tr>
+<tr><td><strong>Memory Layout</strong></td><td>SoA (Structure of Arrays)</td><td>Coalesced global layout + shared tiles</td></tr>
+<tr><td><strong>Quantization</strong></td><td>i16 thresholds for cache density</td><td>Same quantization reused for bandwidth saving</td></tr>
+<tr><td><strong>Runtime API (Application Programming Interface)</strong></td><td><code>void predict_cpu(X, Y)</code></td><td><code>__global__ void predict_gpu(X, Y)</code></td></tr>
+</tbody></table>
+<h3 id="3-3-scheduling-knobs">3.3 Scheduling Knobs<a class="zola-anchor" href="#3-3-scheduling-knobs" aria-label="Anchor link for: 3-3-scheduling-knobs" style="visibility: hidden;"></a>
+</h3>
+<table><thead><tr><th>Parameter</th><th>Description</th><th>Target Effect</th></tr></thead><tbody>
+<tr><td><code>tile_size</code></td><td>Loop tile size</td><td>Cache fit (CPU) / Shared mem fit (GPU)</td></tr>
+<tr><td><code>packet_width</code></td><td>SIMD (Single Instruction Multiple Data) width</td><td>Vector utilization</td></tr>
+<tr><td><code>grid/block</code></td><td>Launch geometry</td><td>Occupancy, latency hiding</td></tr>
+<tr><td><code>quant_bits</code></td><td>Quantization level (8/12/16)</td><td>Cache or bandwidth tradeoff</td></tr>
+</tbody></table>
+<h3 id="3-4-autotuning-layer">3.4 Autotuning Layer<a class="zola-anchor" href="#3-4-autotuning-layer" aria-label="Anchor link for: 3-4-autotuning-layer" style="visibility: hidden;"></a>
+</h3>
+<p>An autotuner can search for optimal <code>(tile, packet, block, quant)</code> given hardware profiles:</p>
+<p>[
+S^* = \arg\max_{S \in \text{ScheduleSpace}} \text{Throughput}(S, \text{arch})
+]</p>
+<p>Similar frameworks exist in <strong>TVM</strong>, <strong>IREE</strong>, and <strong>Halide</strong>.</p>
+<hr />
+<h1 id="4-converging-trends">4. Converging Trends<a class="zola-anchor" href="#4-converging-trends" aria-label="Anchor link for: 4-converging-trends" style="visibility: hidden;"></a>
+</h1>
+<ol>
+<li><strong>Hybrid IRs (Intermediate Representations)</strong> — MLIR’s multi-dialect model enables CPU/GPU lowering from a shared graph.</li>
+<li><strong>Hardware-intent inference</strong> — compilers infer data reuse and control-flow divergence statically.</li>
+<li><strong>Autotuning as compilation</strong> — schedule search is now part of the compiler pipeline.</li>
+<li><strong>Quantization-unified optimization</strong> — same quantized model runs efficiently across heterogeneous targets.</li>
+</ol>
+<hr />
+<h1 id="references">References<a class="zola-anchor" href="#references" aria-label="Anchor link for: references" style="visibility: hidden;"></a>
+</h1>
+<ol>
+<li>Ulrich Drepper, <em>What Every Programmer Should Know About Memory</em>, Red Hat, 2007.</li>
+<li>Intel Corporation, <em>Optimization Reference Manual</em>, 2024.</li>
+<li>Agner Fog, <em>Instruction Tables: Lists of Instruction Latencies, Throughputs and Micro-operation Counts</em>, 2018.</li>
+<li>Vasily Volkov, <em>Understanding Latency Hiding on GPUs</em>, UC Berkeley, 2016.</li>
+<li>NVIDIA Corporation, <em>CUDA Best Practices Guide</em>, 2025.</li>
+<li>AMD ROCm Developer Tools, <em>ROCm Optimization Guide</em>, 2024.</li>
+<li>MLIR Project, <em>Affine and GPU Dialects</em>, LLVM.org, 2025.</li>
+<li>Chen et al., <em>TVM: End-to-End Optimization Stack for Deep Learning</em>, OSDI 2018.</li>
+<li>Ragan-Kelley et al., <em>Halide: Decoupling Algorithms from Schedules</em>, CACM 2017.</li>
+<li>Google IREE Team, <em>Unified Compiler Infrastructure for ML on CPUs, GPUs, and Accelerators</em>, 2023.</li>
+</ol>
+
+      </article>
+
+      
+      
+
+      
+      
+    </div>
+
+    
+
+
+<footer>
+  <div class="left">
+    <div class="copyright">
+      © 2025 &lt;joseph bak&gt;
+      
+      <span>|</span>
+      Built with <a href="https://www.getzola.org" rel="noreferrer" target="_blank">zola</a> and <a href="https://github.com/isunjn/serene" rel="noreferrer" target="_blank">serene</a>
+      
+    </div>
+  </div>
+
+  <div class="right">
+    
+    
+      
+    
+    
+    <a id="rss-btn" href="https://josephbak.github.io/posts/feed.xml">RSS</a>
+    
+    
+
+    
+    
+    
+    <button id="theme-toggle" aria-label="theme switch">
+      <span class="moon-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M10 7C10 10.866 13.134 14 17 14C18.9584 14 20.729 13.1957 21.9995 11.8995C22 11.933 22 11.9665 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C12.0335 2 12.067 2 12.1005 2.00049C10.8043 3.27098 10 5.04157 10 7ZM4 12C4 16.4183 7.58172 20 12 20C15.0583 20 17.7158 18.2839 19.062 15.7621C18.3945 15.9187 17.7035 16 17 16C12.0294 16 8 11.9706 8 7C8 6.29648 8.08133 5.60547 8.2379 4.938C5.71611 6.28423 4 8.9417 4 12Z" fill="currentColor"></path></svg>
+</span>
+      <span class="sun-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M12 18C8.68629 18 6 15.3137 6 12C6 8.68629 8.68629 6 12 6C15.3137 6 18 8.68629 18 12C18 15.3137 15.3137 18 12 18ZM12 16C14.2091 16 16 14.2091 16 12C16 9.79086 14.2091 8 12 8C9.79086 8 8 9.79086 8 12C8 14.2091 9.79086 16 12 16ZM11 1H13V4H11V1ZM11 20H13V23H11V20ZM3.51472 4.92893L4.92893 3.51472L7.05025 5.63604L5.63604 7.05025L3.51472 4.92893ZM16.9497 18.364L18.364 16.9497L20.4853 19.0711L19.0711 20.4853L16.9497 18.364ZM19.0711 3.51472L20.4853 4.92893L18.364 7.05025L16.9497 5.63604L19.0711 3.51472ZM5.63604 16.9497L7.05025 18.364L4.92893 20.4853L3.51472 19.0711L5.63604 16.9497ZM23 11V13H20V11H23ZM4 11V13H1V11H4Z" fill="currentColor"></path></svg>
+</span>
+    </button>
+    
+  </div>
+</footer>
+
+
+
+
+<dialog id="rss-mask">
+  <div>
+    <a href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml">https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml</a>
+    
+    
+    <button autofocus aria-label="copy" data-link="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z" fill="currentColor"></path></svg>
+
+    </button>
+  </div>
+</dialog>
+
+
+
+  </main>
+</div>
+
+  
+<script src="/js/lightense.min.js"></script>
+
+
+  <script src="https://josephbak.github.io/js/main.js"></script>
+</body>
+
+</html>

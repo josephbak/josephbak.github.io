@@ -5,9 +5,166 @@
 	<link rel="self" type="application/atom+xml" href="https://josephbak.github.io/notes/feed.xml"/>
   <link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/"/>
   
-	<updated>2025-10-14T00:00:00+00:00</updated>
+	<updated>2025-10-18T00:00:00+00:00</updated>
 	
 	<id>https://josephbak.github.io/notes/feed.xml</id>
+	<entry xml:lang="en">
+		<title>Compiler Strategies for Cache- and Memory-Friendly Design Across CPUs and GPUs</title>
+		<published>2025-10-18T00:00:00+00:00</published>
+		<updated>2025-10-18T00:00:00+00:00</updated>
+		<link rel="alternate" type="text/html" href="https://josephbak.github.io/notes/compiler-cache-memory-cpu-gpu-hybrid/"/>
+		<id>https://josephbak.github.io/notes/compiler-cache-memory-cpu-gpu-hybrid/</id>
+    
+		<content type="html" xml:base="https://josephbak.github.io/notes/compiler-cache-memory-cpu-gpu-hybrid/">&lt;!-- KaTeX includes (inline; requires markdown.render_unsafe = true) --&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;katex.min.css&quot;&gt;
+&lt;script defer src=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;katex.min.js&quot;&gt;&lt;&#x2F;script&gt;
+&lt;hr &#x2F;&gt;
+&lt;h1 id=&quot;overview&quot;&gt;Overview&lt;a class=&quot;zola-anchor&quot; href=&quot;#overview&quot; aria-label=&quot;Anchor link for: overview&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h1&gt;
+&lt;p&gt;Modern compilers are increasingly &lt;strong&gt;memory- and cache-aware&lt;&#x2F;strong&gt;, as performance is no longer limited by raw FLOPs (floating-point operations per second) but by &lt;strong&gt;data movement&lt;&#x2F;strong&gt; and &lt;strong&gt;cache locality&lt;&#x2F;strong&gt;. CPUs and GPUs expose radically different memory hierarchies, and compiler strategies must adapt to each while still leveraging shared principles of &lt;em&gt;locality, reuse, and predictability&lt;&#x2F;em&gt;.&lt;&#x2F;p&gt;
+&lt;p&gt;This note outlines:&lt;&#x2F;p&gt;
+&lt;ol&gt;
+&lt;li&gt;General cache and memory friendliness rules for &lt;strong&gt;modern CPUs&lt;&#x2F;strong&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;Equivalent performance rules for &lt;strong&gt;modern GPUs&lt;&#x2F;strong&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;A &lt;strong&gt;hybrid compiler design&lt;&#x2F;strong&gt; that targets both architectures from a single intermediate representation (IR).&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;hr &#x2F;&gt;
+&lt;h1 id=&quot;1-cache-and-memory-friendliness-rules-for-cpus&quot;&gt;1. Cache- and Memory-Friendliness Rules for CPUs&lt;a class=&quot;zola-anchor&quot; href=&quot;#1-cache-and-memory-friendliness-rules-for-cpus&quot; aria-label=&quot;Anchor link for: 1-cache-and-memory-friendliness-rules-for-cpus&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h1&gt;
+&lt;p&gt;Modern CPUs (Central Processing Units) are latency-oriented and hierarchical. Typical cache layers include:&lt;&#x2F;p&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Level&lt;&#x2F;th&gt;&lt;th&gt;Typical Size&lt;&#x2F;th&gt;&lt;th&gt;Access Time&lt;&#x2F;th&gt;&lt;th&gt;Notes&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;L1&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;32–64 KB&lt;&#x2F;td&gt;&lt;td&gt;~1 ns&lt;&#x2F;td&gt;&lt;td&gt;Split into instruction (I) and data (D) caches&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;L2&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;256–2048 KB&lt;&#x2F;td&gt;&lt;td&gt;~4 ns&lt;&#x2F;td&gt;&lt;td&gt;Unified per core&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;L3&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;4–64 MB&lt;&#x2F;td&gt;&lt;td&gt;~10–20 ns&lt;&#x2F;td&gt;&lt;td&gt;Shared across cores&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;DRAM&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;GBs&lt;&#x2F;td&gt;&lt;td&gt;~80–120 ns&lt;&#x2F;td&gt;&lt;td&gt;Main memory&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;h3 id=&quot;1-1-universal-compiler-principles-for-cpus&quot;&gt;1.1 Universal Compiler Principles for CPUs&lt;a class=&quot;zola-anchor&quot; href=&quot;#1-1-universal-compiler-principles-for-cpus&quot; aria-label=&quot;Anchor link for: 1-1-universal-compiler-principles-for-cpus&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Principle&lt;&#x2F;th&gt;&lt;th&gt;Explanation&lt;&#x2F;th&gt;&lt;th&gt;Benefit&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Spatial Locality&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Access contiguous memory (arrays, SoA layouts)&lt;&#x2F;td&gt;&lt;td&gt;Fewer cache-line fills&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Temporal Locality&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Reuse recently accessed data&lt;&#x2F;td&gt;&lt;td&gt;Higher cache hit rate&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Hot Code Compactness&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Keep hot loops &amp;lt; 8–16 KB to fit in L1I (Instruction Cache)&lt;&#x2F;td&gt;&lt;td&gt;Fewer ICACHE misses&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Predictable Branching&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Favor likely branches as fallthrough&lt;&#x2F;td&gt;&lt;td&gt;Improves branch predictor accuracy&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Prefetch-Friendly Access&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Stride-1 loops and predictable indexing&lt;&#x2F;td&gt;&lt;td&gt;Enables hardware prefetchers&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Loop Tiling &#x2F; Blocking&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Partition loops so working sets fit in cache&lt;&#x2F;td&gt;&lt;td&gt;Reduces cache thrash&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Data Structure Layout&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Use Structure of Arrays (SoA) for vectorized ops&lt;&#x2F;td&gt;&lt;td&gt;Improves SIMD (Single Instruction Multiple Data) efficiency&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Quantization and Packing&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Compress frequently accessed values (e.g., thresholds)&lt;&#x2F;td&gt;&lt;td&gt;Better cache density&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;p&gt;&lt;strong&gt;Compiler Techniques:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Polyhedral loop optimization and cache tiling (e.g., MLIR affine dialect)&lt;&#x2F;li&gt;
+&lt;li&gt;Function inlining guided by instruction cache budget&lt;&#x2F;li&gt;
+&lt;li&gt;Profile-guided reordering of hot functions&lt;&#x2F;li&gt;
+&lt;li&gt;Prefetch insertion (software prefetch or hardware hinting)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;&lt;strong&gt;References:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Drepper, &lt;em&gt;What Every Programmer Should Know About Memory&lt;&#x2F;em&gt; (2007)&lt;&#x2F;li&gt;
+&lt;li&gt;Fog, &lt;em&gt;Instruction Tables and Cache Optimizations&lt;&#x2F;em&gt; (2018)&lt;&#x2F;li&gt;
+&lt;li&gt;Intel Optimization Manual, vol. 1–3 (2024)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h1 id=&quot;2-memory-hierarchies-and-rules-for-gpus&quot;&gt;2. Memory Hierarchies and Rules for GPUs&lt;a class=&quot;zola-anchor&quot; href=&quot;#2-memory-hierarchies-and-rules-for-gpus&quot; aria-label=&quot;Anchor link for: 2-memory-hierarchies-and-rules-for-gpus&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h1&gt;
+&lt;p&gt;GPUs (Graphics Processing Units) are throughput-oriented, designed for &lt;strong&gt;massive parallelism&lt;&#x2F;strong&gt; and &lt;strong&gt;bandwidth utilization&lt;&#x2F;strong&gt; rather than latency minimization. A simplified hierarchy:&lt;&#x2F;p&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Memory Type&lt;&#x2F;th&gt;&lt;th&gt;Latency&lt;&#x2F;th&gt;&lt;th&gt;Scope&lt;&#x2F;th&gt;&lt;th&gt;Access&lt;&#x2F;th&gt;&lt;th&gt;Notes&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Registers&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;~1 cycle&lt;&#x2F;td&gt;&lt;td&gt;Per-thread&lt;&#x2F;td&gt;&lt;td&gt;Fastest&lt;&#x2F;td&gt;&lt;td&gt;Holds scalars and temporaries&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Shared Memory (L1)&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;20–30 ns&lt;&#x2F;td&gt;&lt;td&gt;Per-block&lt;&#x2F;td&gt;&lt;td&gt;Programmable SRAM&lt;&#x2F;td&gt;&lt;td&gt;Manually managed cache&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;L2 Cache&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;~100 ns&lt;&#x2F;td&gt;&lt;td&gt;All SMs&lt;&#x2F;td&gt;&lt;td&gt;Automatic&lt;&#x2F;td&gt;&lt;td&gt;Shared across chip&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Global Memory (VRAM&#x2F;HBM)&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;300–800 ns&lt;&#x2F;td&gt;&lt;td&gt;Device&lt;&#x2F;td&gt;&lt;td&gt;Coalesced access needed&lt;&#x2F;td&gt;&lt;td&gt;&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Host Memory (CPU RAM)&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;µs&lt;&#x2F;td&gt;&lt;td&gt;Across PCIe&#x2F;NVLink&lt;&#x2F;td&gt;&lt;td&gt;Very high latency&lt;&#x2F;td&gt;&lt;td&gt;&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;h3 id=&quot;2-1-universal-gpu-compiler-rules&quot;&gt;2.1 Universal GPU Compiler Rules&lt;a class=&quot;zola-anchor&quot; href=&quot;#2-1-universal-gpu-compiler-rules&quot; aria-label=&quot;Anchor link for: 2-1-universal-gpu-compiler-rules&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Principle&lt;&#x2F;th&gt;&lt;th&gt;Explanation&lt;&#x2F;th&gt;&lt;th&gt;Benefit&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Memory Coalescing&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Adjacent threads in a warp access consecutive addresses&lt;&#x2F;td&gt;&lt;td&gt;Full memory transaction utilization&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Shared Memory Reuse&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Tile reusable data into shared memory&lt;&#x2F;td&gt;&lt;td&gt;Reduces global memory traffic&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Warp Uniformity&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;All threads in a warp follow same control path&lt;&#x2F;td&gt;&lt;td&gt;Prevents divergence serialization&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Predication over Branching&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Replace if&#x2F;else with arithmetic masks&lt;&#x2F;td&gt;&lt;td&gt;Keeps SIMD lanes active&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;High Occupancy&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Use few registers &amp;amp; shared memory per thread&lt;&#x2F;td&gt;&lt;td&gt;Hides latency by overlapping warps&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Compute–Memory Balance&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Increase arithmetic intensity (FLOPs&#x2F;byte)&lt;&#x2F;td&gt;&lt;td&gt;Hides memory latency&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Explicit Tiling&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Use kernel-level loop tiling &amp;amp; block synchronization&lt;&#x2F;td&gt;&lt;td&gt;Improves data reuse and scheduling&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;p&gt;&lt;strong&gt;Compiler Techniques:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Kernel fusion and loop tiling (e.g., MLIR’s GPU dialect)&lt;&#x2F;li&gt;
+&lt;li&gt;Thread-block scheduling with register pressure control&lt;&#x2F;li&gt;
+&lt;li&gt;Warp-level predication lowering&lt;&#x2F;li&gt;
+&lt;li&gt;Autotuning for launch geometry &lt;code&gt;(grid, block, warp)&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;&lt;strong&gt;References:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;NVIDIA CUDA Best Practices Guide (2025)&lt;&#x2F;li&gt;
+&lt;li&gt;AMD ROCm Optimization Guide (2024)&lt;&#x2F;li&gt;
+&lt;li&gt;Volkov, &lt;em&gt;Understanding Latency Hiding on GPUs&lt;&#x2F;em&gt; (2016)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr &#x2F;&gt;
+&lt;h1 id=&quot;3-hybrid-compiler-design-unified-ir-for-cpus-and-gpus&quot;&gt;3. Hybrid Compiler Design: Unified IR for CPUs and GPUs&lt;a class=&quot;zola-anchor&quot; href=&quot;#3-hybrid-compiler-design-unified-ir-for-cpus-and-gpus&quot; aria-label=&quot;Anchor link for: 3-hybrid-compiler-design-unified-ir-for-cpus-and-gpus&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h1&gt;
+&lt;p&gt;The goal: &lt;strong&gt;a single intermediate representation (IR)&lt;&#x2F;strong&gt; that expresses control flow, memory access, and parallel structure so it can be lowered to both CPU and GPU backends efficiently.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;3-1-core-design&quot;&gt;3.1 Core Design&lt;a class=&quot;zola-anchor&quot; href=&quot;#3-1-core-design&quot; aria-label=&quot;Anchor link for: 3-1-core-design&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;p&gt;A unified IR should model computation as &lt;strong&gt;structured regions with explicit data dependencies&lt;&#x2F;strong&gt;:&lt;&#x2F;p&gt;
+&lt;pre class=&quot;z-code&quot;&gt;&lt;code&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;forest.apply %X {
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  tree.begin %t0
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    %n0 = node.split.num  fid=3, thr=0.72
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;    br_if %n0, label %L1, %L2
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  %L1: node.leaf  val=0.13
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  %L2: node.leaf  val=-0.02
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;  tree.end
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;}
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;This high-level control flow can be specialized differently per backend.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;3-2-lowering-strategies&quot;&gt;3.2 Lowering Strategies&lt;a class=&quot;zola-anchor&quot; href=&quot;#3-2-lowering-strategies&quot; aria-label=&quot;Anchor link for: 3-2-lowering-strategies&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Phase&lt;&#x2F;th&gt;&lt;th&gt;CPU Lowering&lt;&#x2F;th&gt;&lt;th&gt;GPU Lowering&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Control Flow&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Emit branchy code; flatten hot paths&lt;&#x2F;td&gt;&lt;td&gt;Use predicated arithmetic; avoid divergence&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Parallelism&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;Vectorize (AVX512&#x2F;SVE) across samples&lt;&#x2F;td&gt;&lt;td&gt;Map threads to (sample, tree) grid&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Memory Layout&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;SoA (Structure of Arrays)&lt;&#x2F;td&gt;&lt;td&gt;Coalesced global layout + shared tiles&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Quantization&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;i16 thresholds for cache density&lt;&#x2F;td&gt;&lt;td&gt;Same quantization reused for bandwidth saving&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;strong&gt;Runtime API (Application Programming Interface)&lt;&#x2F;strong&gt;&lt;&#x2F;td&gt;&lt;td&gt;&lt;code&gt;void predict_cpu(X, Y)&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;td&gt;&lt;code&gt;__global__ void predict_gpu(X, Y)&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;h3 id=&quot;3-3-scheduling-knobs&quot;&gt;3.3 Scheduling Knobs&lt;a class=&quot;zola-anchor&quot; href=&quot;#3-3-scheduling-knobs&quot; aria-label=&quot;Anchor link for: 3-3-scheduling-knobs&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Parameter&lt;&#x2F;th&gt;&lt;th&gt;Description&lt;&#x2F;th&gt;&lt;th&gt;Target Effect&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;&lt;code&gt;tile_size&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;td&gt;Loop tile size&lt;&#x2F;td&gt;&lt;td&gt;Cache fit (CPU) &#x2F; Shared mem fit (GPU)&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;code&gt;packet_width&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;td&gt;SIMD (Single Instruction Multiple Data) width&lt;&#x2F;td&gt;&lt;td&gt;Vector utilization&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;code&gt;grid&#x2F;block&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;td&gt;Launch geometry&lt;&#x2F;td&gt;&lt;td&gt;Occupancy, latency hiding&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;&lt;code&gt;quant_bits&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;td&gt;Quantization level (8&#x2F;12&#x2F;16)&lt;&#x2F;td&gt;&lt;td&gt;Cache or bandwidth tradeoff&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;h3 id=&quot;3-4-autotuning-layer&quot;&gt;3.4 Autotuning Layer&lt;a class=&quot;zola-anchor&quot; href=&quot;#3-4-autotuning-layer&quot; aria-label=&quot;Anchor link for: 3-4-autotuning-layer&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h3&gt;
+&lt;p&gt;An autotuner can search for optimal &lt;code&gt;(tile, packet, block, quant)&lt;&#x2F;code&gt; given hardware profiles:&lt;&#x2F;p&gt;
+&lt;p&gt;[
+S^* = \arg\max_{S \in \text{ScheduleSpace}} \text{Throughput}(S, \text{arch})
+]&lt;&#x2F;p&gt;
+&lt;p&gt;Similar frameworks exist in &lt;strong&gt;TVM&lt;&#x2F;strong&gt;, &lt;strong&gt;IREE&lt;&#x2F;strong&gt;, and &lt;strong&gt;Halide&lt;&#x2F;strong&gt;.&lt;&#x2F;p&gt;
+&lt;hr &#x2F;&gt;
+&lt;h1 id=&quot;4-converging-trends&quot;&gt;4. Converging Trends&lt;a class=&quot;zola-anchor&quot; href=&quot;#4-converging-trends&quot; aria-label=&quot;Anchor link for: 4-converging-trends&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h1&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Hybrid IRs (Intermediate Representations)&lt;&#x2F;strong&gt; — MLIR’s multi-dialect model enables CPU&#x2F;GPU lowering from a shared graph.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Hardware-intent inference&lt;&#x2F;strong&gt; — compilers infer data reuse and control-flow divergence statically.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Autotuning as compilation&lt;&#x2F;strong&gt; — schedule search is now part of the compiler pipeline.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Quantization-unified optimization&lt;&#x2F;strong&gt; — same quantized model runs efficiently across heterogeneous targets.&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;hr &#x2F;&gt;
+&lt;h1 id=&quot;references&quot;&gt;References&lt;a class=&quot;zola-anchor&quot; href=&quot;#references&quot; aria-label=&quot;Anchor link for: references&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h1&gt;
+&lt;ol&gt;
+&lt;li&gt;Ulrich Drepper, &lt;em&gt;What Every Programmer Should Know About Memory&lt;&#x2F;em&gt;, Red Hat, 2007.&lt;&#x2F;li&gt;
+&lt;li&gt;Intel Corporation, &lt;em&gt;Optimization Reference Manual&lt;&#x2F;em&gt;, 2024.&lt;&#x2F;li&gt;
+&lt;li&gt;Agner Fog, &lt;em&gt;Instruction Tables: Lists of Instruction Latencies, Throughputs and Micro-operation Counts&lt;&#x2F;em&gt;, 2018.&lt;&#x2F;li&gt;
+&lt;li&gt;Vasily Volkov, &lt;em&gt;Understanding Latency Hiding on GPUs&lt;&#x2F;em&gt;, UC Berkeley, 2016.&lt;&#x2F;li&gt;
+&lt;li&gt;NVIDIA Corporation, &lt;em&gt;CUDA Best Practices Guide&lt;&#x2F;em&gt;, 2025.&lt;&#x2F;li&gt;
+&lt;li&gt;AMD ROCm Developer Tools, &lt;em&gt;ROCm Optimization Guide&lt;&#x2F;em&gt;, 2024.&lt;&#x2F;li&gt;
+&lt;li&gt;MLIR Project, &lt;em&gt;Affine and GPU Dialects&lt;&#x2F;em&gt;, LLVM.org, 2025.&lt;&#x2F;li&gt;
+&lt;li&gt;Chen et al., &lt;em&gt;TVM: End-to-End Optimization Stack for Deep Learning&lt;&#x2F;em&gt;, OSDI 2018.&lt;&#x2F;li&gt;
+&lt;li&gt;Ragan-Kelley et al., &lt;em&gt;Halide: Decoupling Algorithms from Schedules&lt;&#x2F;em&gt;, CACM 2017.&lt;&#x2F;li&gt;
+&lt;li&gt;Google IREE Team, &lt;em&gt;Unified Compiler Infrastructure for ML on CPUs, GPUs, and Accelerators&lt;&#x2F;em&gt;, 2023.&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+</content>
+	</entry>
 	<entry xml:lang="en">
 		<title>Lowering as Graph-of-Graphs: A Structural View of MLIR and LLVM Pipelines</title>
 		<published>2025-10-14T00:00:00+00:00</published>

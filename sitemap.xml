@@ -29,6 +29,10 @@
         <lastmod>2025-10-03</lastmod>
     </url>
     <url>
+        <loc>https://josephbak.github.io/notes/compiler-cache-memory-cpu-gpu-hybrid/</loc>
+        <lastmod>2025-10-18</lastmod>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/notes/memory-alignment-hardware-cpp/</loc>
         <lastmod>2025-10-13</lastmod>
     </url>
@@ -76,10 +80,19 @@
         <loc>https://josephbak.github.io/tags/aot-autograd/</loc>
     </url>
     <url>
+        <loc>https://josephbak.github.io/tags/cache-optimization/</loc>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/tags/category-theory/</loc>
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/compilers/</loc>
+    </url>
+    <url>
+        <loc>https://josephbak.github.io/tags/cpu/</loc>
+    </url>
+    <url>
+        <loc>https://josephbak.github.io/tags/gpu/</loc>
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/graph/</loc>
@@ -94,6 +107,9 @@
         <loc>https://josephbak.github.io/tags/llvm/</loc>
     </url>
     <url>
+        <loc>https://josephbak.github.io/tags/memory-hierarchy/</loc>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/tags/mlir/</loc>
     </url>
     <url>
@@ -101,6 +117,9 @@
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/static/</loc>
+    </url>
+    <url>
+        <loc>https://josephbak.github.io/tags/systems-design/</loc>
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/training-graphs/</loc>
