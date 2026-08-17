@@ -4,3 +4,5 @@
 
 # Zola
 public/
+.DS_Store
+public/
