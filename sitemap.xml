@@ -13,6 +13,9 @@
         <loc>https://josephbak.github.io/categories/</loc>
     </url>
     <url>
+        <loc>https://josephbak.github.io/categories/mx-quantization-dialect/</loc>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/lab/</loc>
     </url>
     <url>
@@ -68,6 +71,10 @@
         <loc>https://josephbak.github.io/posts/</loc>
     </url>
     <url>
+        <loc>https://josephbak.github.io/posts/designing-mx-dialect/</loc>
+        <lastmod>2026-08-12</lastmod>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/series/</loc>
     </url>
     <url>
@@ -114,6 +121,9 @@
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/pytorch/</loc>
+    </url>
+    <url>
+        <loc>https://josephbak.github.io/tags/quantization/</loc>
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/static/</loc>

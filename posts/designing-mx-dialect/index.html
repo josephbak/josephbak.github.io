@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  
+  
+    
+  
+  <meta name="description" content="Designing an out-of-tree MLIR dialect for OCP Microscaling quantization: one parameterized type, four ops, and the decisions that constrain each other across passes.">
+
+  <title>A Dialect Is a Set of Co-Designed Decisions: Designing for MX Quantization in MLIR</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="https://josephbak.github.io/img/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://josephbak.github.io/img/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://josephbak.github.io/img/apple-touch-icon.png">
+  
+  <style>
+
+  /* light mode colors */
+  body {
+    --primary-color: #5871a2;
+    --primary-pale-color: #5871a233;
+    --primary-decoration-color: #5871a210;
+    --bg-color: #ffffff;
+    --text-color: #2f3030;
+    --text-pale-color: #767676;
+    --text-decoration-color: #a9a9a9;
+    --highlight-mark-color: #5f75b020;
+
+    --callout-note-color: #5871a2;
+    --callout-tip-color: #268556;
+    --callout-important-color: #885fc9;
+    --callout-warning-color: #ab6632;
+    --callout-caution-color: #c64e4e;
+  }
+
+  /* dark mode colors */
+  body.dark {
+    --primary-color: #6f8fd1;
+    --primary-pale-color: #6f8fd166;
+    --primary-decoration-color: #6f8fd112;
+    --bg-color: #1c1c1c;
+    --text-color: #c1c1c1;
+    --text-pale-color: #848484;
+    --text-decoration-color: #5f5f5f;
+    --highlight-mark-color: #8296cb3b;
+
+    --callout-note-color: #6f8fd1;
+    --callout-tip-color: #47976f;
+    --callout-important-color: #9776cd;
+    --callout-warning-color: #ad7a52;
+    --callout-caution-color: #d06161;
+  }
+
+  /* typography */
+  body {
+    --main-font: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --code-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --homepage-max-width: 768px;
+    --main-max-width: 768px;
+    --avatar-size: 60px;
+    --font-size: 16px;
+    --line-height: 1.75;
+    --img-border-radius: 0px;
+    --detail-border-radius: 0px;
+    --dark-mode-img-brightness: 0.75;
+    --dark-mode-chart-brightness: 0.75;
+    --inline-code-border-radius: 2px;
+    --inline-code-bg-color: var(--primary-decoration-color);
+    --block-code-border-radius: 0px;
+    --block-code-border-color: var(--primary-color);
+    --detail-border-color: var(--primary-color);
+  }
+
+</style>
+
+  <link rel="stylesheet" href="https://josephbak.github.io/main.css">
+  
+
+<link id="hl" rel="stylesheet" type="text/css" href="/hl-light.css" />
+
+
+
+  
+</head>
+
+<body class="post">
+  
+  <script>
+    const theme = sessionStorage.getItem('theme');
+    const match = window.matchMedia("(prefers-color-scheme: dark)").matches
+    if ((theme && theme == 'dark') || (!theme && match)) {
+      document.body.classList.add('dark');
+      const hl = document.querySelector('link#hl');
+      if (hl) hl.href = 'https://josephbak.github.io/hl-dark.css';
+    }
+  </script>
+  
+  
+<div id="wrapper">
+  <div id="blank"></div>
+  <aside>
+    
+    
+    <nav>
+      <ul>
+        
+        <li>
+          <a class="h2" href="#what-block-scaling-is">What block scaling is</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#the-type-mx-tensor">The type: !mx.tensor</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#the-four-ops">The four ops</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#the-block-axis">The block axis</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#the-accumulator-operand">The accumulator operand</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#what-s-deferred-and-what-s-next">What&#x27;s deferred, and what&#x27;s next</a>
+          
+        </li>
+        
+      </ul>
+    </nav>
+    
+    
+    <button id="back-to-top" aria-label="back to top">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-arrow-up"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+
+    </button>
+    
+  </aside>
+  <main>
+    
+<header>
+  <nav>
+    <a id="back-link" href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts">← Back</a>
+  </nav>
+</header>
+
+
+    <div>
+      
+      
+      
+      
+      <div id="copy-cfg" style="display: none;" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+"></div>
+      
+      <article class="prose">
+        <h1>A Dialect Is a Set of Co-Designed Decisions: Designing for MX Quantization in MLIR</h1>
+        <div id="post-info">
+          <div id="date">
+            <span id="publish">Aug 12, 2026</span>
+            </div>
+
+          
+          <div id="tags">
+            <a class="instant" href="https://josephbak.github.io//tags/mlir"><span>#</span>mlir</a><a class="instant" href="https://josephbak.github.io//tags/compilers"><span>#</span>compilers</a><a class="instant" href="https://josephbak.github.io//tags/quantization"><span>#</span>quantization</a>
+          </div>
+          
+        </div>
+
+        
+        
+
+        
+
+        <!-- KaTeX includes (inline; requires markdown.render_unsafe = true) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
+<script>
+ document.addEventListener("DOMContentLoaded", function() {
+ renderMathInElement(document.body, {
+ delimiters: [
+ {left: "$$", right: "$$", display: true},
+ {left: "\\[", right: "\\]", display: true},
+ {left: "$", right: "$", display: false},
+ {left: "\\(", right: "\\)", display: false}
+ ],
+ throwOnError: false
+ });
+ });
+</script>
+<p>Modern hardware can do arithmetic far faster than it can fetch the numbers to compute on. For large-model inference the bottleneck is rarely the multiply-accumulate units. It's memory bandwidth, the cost of moving weights and activations from DRAM to the compute. Quantization attacks that bottleneck directly: store each number in fewer bits, move fewer bytes, and spend the machine's idle arithmetic capacity reconstructing full-precision values on the fly. It trades FLOPs, which are cheap, for memory traffic, which is not.</p>
+<p><code>mlir-mx</code> is an out-of-tree MLIR dialect implementing OCP Microscaling (MX) block-scaled quantization, the format behind NVIDIA Blackwell and AMD's MI300-series accelerators. The design goal is clear: represent block-scaled data in the IR, and lower it to code that moves those smaller bytes and reconstructs full precision on the fly. Four operations cover the core: <code>quantize_block</code> (pack f32 into a mantissa plus a shared scale), <code>dequantize_block</code> (the inverse), <code>block_matmul</code> (multiply while still block-scaled), and <code>fold_scale</code> (a canonicalization for scale-only multiplies, the subject of Post 2). Plus one parameterized type, <code>!mx.tensor</code>, carrying the block-scale metadata.</p>
+<p>That list, a type and four ops, makes it look like a dialect is a parts catalog: pick a type, pick some operations, done. It isn't. <strong>A dialect is a set of co-designed decisions, and the type, ops, and attributes are just where those decisions become visible.</strong> A dialect gets built in stages: first you define the types, then the ops, then the lowerings that turn those ops into simpler IR, then bufferization that turns values into memory. These stages are not independent. The type's parameters are shaped by what the ops need; the ops' signatures by how they'll lower; the lowering by how it'll schedule and bufferize. A choice made at the type stage can be forced by something that doesn't happen until the lowering stage, several passes later. Pull one decision and others move. The rest of this post walks the type and the four ops. Two forces get the full treatment: the <strong>block axis</strong> of the type, forced by how the matmul reduces, and the <strong>accumulator operand</strong> of <code>block_matmul</code>, forced by how it bufferizes.</p>
+<h2 id="what-block-scaling-is">What block scaling is<a class="zola-anchor" href="#what-block-scaling-is" aria-label="Anchor link for: what-block-scaling-is" style="visibility: hidden;"></a>
+</h2>
+<p>Ordinary quantization picks one scale factor for a whole tensor: every value is stored as a small integer or low-bit float, times that one shared number. The problem is outliers: one large value forces a coarse scale, and all the small values lose precision under it.</p>
+<p>Block scaling fixes this by using many scales instead of one. Split the data into fixed-size blocks of 32 contiguous elements, in MX, and give each block its own scale. A value is reconstructed as <code>mantissa × block_scale</code>:</p>
+<pre class="z-code"><code><span class="z-text z-plain">values:  [ v0  v1  v2  ...  v31 ][ v32  v33  ...  v63 ]
+</span><span class="z-text z-plain">         └──────── block 0 ──────┘└─────── block 1 ────┘
+</span><span class="z-text z-plain">scale:            S0                        S1
+</span><span class="z-text z-plain">                  (one shared scale per 32 elements)
+</span></code></pre>
+<p>Each element stores a small mantissa; each block of 32 stores one shared scale. OCP MX (Open Compute Project Microscaling) is the cross-vendor standard for this: block size 32, an FP8 mantissa, and a power-of-two scale. It's what NVIDIA Blackwell and AMD's MI300-series accelerators run in hardware.</p>
+<h2 id="the-type-mx-tensor">The type: <code>!mx.tensor</code><a class="zola-anchor" href="#the-type-mx-tensor" aria-label="Anchor link for: the-type-mx-tensor" style="visibility: hidden;"></a>
+</h2>
+<p>Every op in the dialect operates on one type, so it gets defined first. An <code>!mx.tensor</code> is a block-scaled tensor: low-bit mantissa data plus the metadata needed to interpret it. Written out:</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">!mx.tensor&lt;32x64xf8E4M3FN, block_size = 32, scale_type = f8E8M0FNU&gt;
+</span></code></pre>
+<p><code>MX_TensorType</code> is a custom type defined from scratch in the <code>mx</code> dialect (a TableGen <code>TypeDef</code>, mnemonic <code>tensor</code>, so it prints as <code>!mx.tensor</code>). It is <strong>not</strong> a builtin <code>RankedTensorType</code> and does not inherit from one. It carries four parameters: a <code>shape</code> (an array of dimension sizes, the same <code>int64_t</code>-array representation MLIR's own shaped types use), an <code>elementType</code> for the mantissa, a <code>blockSize</code>, and a <code>scaleType</code>. The first two mirror what a ranked tensor holds; the last two are what make it <em>block-scaled</em> rather than merely low-bit.</p>
+<ul>
+<li><strong><code>shape</code>, <code>elementType</code></strong> (<code>32x64</code>, <code>f8E4M3FN</code>): the mantissa tensor. <code>f8E4M3FN</code> is an 8-bit float, 4 exponent bits and 3 mantissa bits, holding each quantized value.</li>
+<li><strong><code>block_size</code></strong> (<code>32</code>): how many contiguous elements share one scale. 32 is the OCP MX block size.</li>
+<li><strong><code>scale_type</code></strong> (<code>f8E8M0FNU</code>): the shared scale's element type. E8M0 is 8 exponent bits and zero mantissa bits, so it represents powers of two and nothing else. Why that constraint is useful is Post 2's subject.</li>
+</ul>
+<p>Making it an independent type, rather than reusing <code>RankedTensorType</code> or implementing MLIR's <code>ShapedTypeInterface</code>, is a deliberate choice. A block-scaled tensor is not a single shaped value: at bufferization it decomposes into a mantissa tensor and a separate scale tensor. Implementing the shaped-type interface would promise the 1:1 tensor semantics that decomposition deliberately breaks. That story is Post 4; the point here is that even the <em>type</em> was defined with the lowering in mind.</p>
+<p>Two flags on the definition matter later. <code>hasCustomAssemblyFormat = 1</code> means the <code>NxNx...</code> syntax is parsed by hand rather than by a declarative format; the mechanics of that (and the rule to use <code>getChecked</code> over <code>get</code> in a parser) are in a linked note. <code>genVerifyDecl = 1</code> means the type has a verifier: it checks that <code>blockSize &gt; 0</code> and that the block size evenly divides the last dimension. Structural checks only — no scale math, no value semantics. The verifier's entire job is well-formedness.</p>
+<p>The type stores the scale's <em>type</em> and <em>how many elements it covers</em>, never the scale values themselves. A helper, <code>getNumScaleBlocks()</code>, computes how many scales a tensor needs (one per block along the last axis), but that's a count, not the data. This is just what a type is in MLIR: a compile-time label, not runtime storage. Where the scale values actually live is a bufferization question with a non-obvious answer, and it gets its own post (Post 4).</p>
+<p>One parameter is doing more work than it looks. The type says block size 32, but not <em>which axis</em> is blocked. So it fixes a convention: <strong>blocking always runs along the last axis.</strong> That looks like an arbitrary tidiness rule. It isn't. It's the first of the two co-designed decisions, and the thing that forces it doesn't appear until the matmul lowers, well into the pipeline. We'll come back to it once the ops are on the table.</p>
+<h2 id="the-four-ops">The four ops<a class="zola-anchor" href="#the-four-ops" aria-label="Anchor link for: the-four-ops" style="visibility: hidden;"></a>
+</h2>
+<p>A note on scope: this is v1, a deliberately minimal first version with four ops and one type, and some features held back to later versions (marked v1.5 or v2 as they come up).</p>
+<p>With the type defined, the four operations follow. Each takes or produces an <code>!mx.tensor</code> and does one job.</p>
+<p><strong><code>quantize_block</code></strong> turns a normal <code>f32</code> tensor into a block-scaled one. It reads a <code>tensor&lt;...xf32&gt;</code> and produces an <code>!mx.tensor</code>: for each block of 32 elements it picks a shared scale, then rounds each element against that scale into the low-bit mantissa type. This is the lossy step. The whole round-trip's precision loss happens here, when 32 full-precision values are forced to share one power-of-two scale and each is rounded to three mantissa bits.</p>
+<p><strong><code>dequantize_block</code></strong> is the inverse: <code>!mx.tensor</code> back to <code>tensor&lt;...xf32&gt;</code>. For each element it multiplies the mantissa by its block's scale. Because the scale is a power of two, that multiply just shifts the exponent and adds no error of its own, so dequantize faithfully reconstructs whatever the quantize step produced, no more and no less.</p>
+<p><strong><code>block_matmul</code></strong> is the point of the whole dialect: multiply while the data is still block-scaled, so the smaller bytes are what moves. It takes a block-scaled <code>A</code> of shape <code>M×K</code>, an ordinary <code>f32</code> matrix <code>B</code> of shape <code>K×N</code>, and an accumulator <code>C</code> of shape <code>M×N</code>, and computes <code>C += A · B</code>. The reduction runs along <code>K</code>, the shared dimension the two matrices multiply over. As the sum sweeps <code>K</code>, <code>A</code>'s mantissas are read per element while <code>A</code>'s scales are read once per block of 32. The scale indexing is coarser than the mantissa indexing by exactly the block size. That coarseness is what settles the deferred question of which axis gets blocked.</p>
+<p><strong><code>fold_scale</code></strong> doesn't quantize, dequantize, or multiply. It's a canonicalization, an algebraic cleanup the compiler applies before code generation, for the case where a block-scaled value gets multiplied by a scalar. Rather than touch every element, the scalar can be handled more cheaply by rewriting the surrounding ops. It carries no lowering of its own and must be gone before the conversion pass runs. (Post 2 covers which forms v1 folds and the power-of-two property in play.)</p>
+<p>One detail of <code>block_matmul</code>'s signature will matter later: it carries the accumulator <code>C</code> as an operand, not just a result. That's the second co-designed decision, and like the first, its justification shows up further down the pipeline.</p>
+<h2 id="the-block-axis">The block axis<a class="zola-anchor" href="#the-block-axis" aria-label="Anchor link for: the-block-axis" style="visibility: hidden;"></a>
+</h2>
+<p>Back to the deferred question: the type blocks along the last axis. Why fix that as a rule?</p>
+<p>Start from what <code>block_matmul</code> computes. Each output element is a sum over <code>K</code>:</p>
+<pre class="z-code"><code><span class="z-text z-plain">C[m,n] = Σ  A[m,k] · B[k,n]
+</span><span class="z-text z-plain">     k=0..K-1
+</span></code></pre>
+<p><code>A</code> is block-scaled, so <code>A[m,k]</code> isn't stored directly. It's a mantissa times its block's scale. The whole question is: <strong>what does that scale depend on?</strong> And that depends entirely on which axis is blocked.</p>
+<p>Block along <code>K</code>, the last axis, which is what the type fixes. Then the scale for <code>A[m,k]</code> is <code>S[m, k/32]</code>: one scale per row, shared across each run of 32 consecutive <code>k</code>. The sharing runs along the reduction.</p>
+<pre class="z-code"><code><span class="z-text z-plain">row m of A, K = 64, two blocks along k:
+</span><span class="z-text z-plain">
+</span><span class="z-text z-plain">  k:  0  1  2 ...  31     32  33 ...  63
+</span><span class="z-text z-plain">      └── S[m,0] ──┘      └── S[m,1] ──┘
+</span><span class="z-text z-plain">      one scale for       one scale for
+</span><span class="z-text z-plain">      this run of k       this run of k
+</span><span class="z-text z-plain">
+</span><span class="z-text z-plain">  reduction sweeps k  ──────────────▶
+</span><span class="z-text z-plain">  scale is constant within each run it sums over
+</span></code></pre>
+<p>Because the scale is constant across each block of the sum, it factors out of that block's partial sum: 32 mantissa terms share one scale. The scale aligns with the direction being summed.</p>
+<p>Now block along <code>M</code>, the rows, instead. The scale for <code>A[m,k]</code> becomes <code>S[m/32, k]</code>: shared across 32 rows, but varying with <code>k</code>.</p>
+<pre class="z-code"><code><span class="z-text z-plain">reduction sweeps k  ──────────────▶
+</span><span class="z-text z-plain">
+</span><span class="z-text z-plain">  k =    0       1       2     ...
+</span><span class="z-text z-plain">       S[·,0]  S[·,1]  S[·,2]  ...
+</span><span class="z-text z-plain">       └─ a different scale at every k ─┘
+</span><span class="z-text z-plain">
+</span><span class="z-text z-plain">  scale changes on every step of the sum it&#39;s inside
+</span></code></pre>
+<p>Now the scale sits inside the reduction and changes on every step. It can't factor out; every term of the sum carries its own scale. The block sharing (across rows) is orthogonal to the reduction (along <code>k</code>), so the one structural advantage of block scaling, a shared scale amortized over a run, is unavailable to the matmul.</p>
+<p>Here's the part worth being precise about, because it's easy to overstate. Blocking along <code>M</code> doesn't cost more storage. The same mantissas and the same number of scales get stored; the count is <code>M·K/32</code> either way, the same ~4× compression over <code>f32</code>. What's lost is exploitability. The scale can't align with the reduction, so the matmul can't use the block structure: the format keeps its storage cost and loses its computational benefit. That is what "no traffic win" means. The bytes don't grow; the one operation the dialect exists for just can't take advantage of them.</p>
+<p>So the last-axis rule isn't tidiness. It's forced: <strong>the block axis must be the reduction axis, because a shared scale only aligns with a matmul if it's constant along the axis being summed.</strong> For <code>A</code> of shape <code>M×K</code>, the reduction axis is <code>K</code>, which is the last axis. The type fixes last-axis blocking, and <code>block_matmul</code>'s reduction is the reason.</p>
+<p>That's the first cross-stage force, stated plainly: a choice at the type stage (which axis carries the blocks), justified only by a fact about the lowering stage (how the matmul reduces), which runs passes later. Define the type without the matmul in mind and last-axis looks arbitrary; you might just as easily block the rows. Design the two stages together and it's the only choice that works.</p>
+<p>One honest edge, since it shows where the rule's generality stops. "Last axis" is really shorthand for "the reduction axis," and those coincide only because <code>A</code> is the left operand, whose reduction axis is last. A quantized <code>B</code>, deferred to v1.5, reduces along its first axis, so the same principle would put its blocks there. The convention is last-axis for <code>A</code>; the law underneath is reduction-axis. When <code>B</code> gets quantized, the type will need an explicit block-axis parameter rather than a fixed last-axis rule.</p>
+<p>The block axis was a choice at the type stage, forced by the lowering stage. The next decision is the same shape, one stage further down: a choice in an op's signature, forced by bufferization.</p>
+<h2 id="the-accumulator-operand">The accumulator operand<a class="zola-anchor" href="#the-accumulator-operand" aria-label="Anchor link for: the-accumulator-operand" style="visibility: hidden;"></a>
+</h2>
+<p>This is the second of the two forces. The first was a type-stage choice forced by the lowering stage. This one is an op-signature choice forced by bufferization, near the end of the pipeline.</p>
+<p><code>block_matmul</code> takes three operands: the block-scaled <code>A</code>, the matrix <code>B</code>, and an accumulator <code>C</code>. It computes <code>C += A · B</code>. That third operand is the one to look at. <code>C</code> is both an input and the result: the op reads the incoming <code>C</code>, adds <code>A · B</code> to it, and produces the updated <code>C</code>. It could have been written the other way, as a pure <code>C = A · B</code> with <code>C</code> as a result only, no accumulator input. Why carry <code>C</code> in?</p>
+<p>The answer doesn't live in the op definition or the lowering. It lives at bufferization, where tensors become memory.</p>
+<p>A quick frame for what bufferization does. Up through the lowering, everything is <em>value-semantic</em>: a tensor is a mathematical value, not a location in memory, and every op conceptually produces a fresh one. That's clean to reason about but not how hardware works, since hardware writes to buffers. Bufferization is the stage that assigns each tensor value a concrete memory buffer, and its central question for every op is whether the op can write its result into an existing buffer, in place, or needs a fresh allocation and a copy.</p>
+<p>In-place is what you want. A matmul that allocates a new <code>M×N</code> buffer on every call and then copies is moving bytes the algorithm doesn't require, which is exactly the memory traffic this dialect exists to cut. For the benchmark to measure only essential traffic, the accumulator has to be updated in place.</p>
+<p>That is what the <code>C</code> operand makes possible. Because <code>C</code> is passed in as an operand, the op's result can reuse <code>C</code>'s own buffer: the GEMM (General Matrix Multiply) form <code>C += A · B</code> names a destination, "write the result back into <code>C</code>." This is destination-passing style (DPS), the pattern MLIR's own <code>linalg</code> ops use for the same reason. Write the op the other way, <code>C = A · B</code> with no accumulator input, and there's no incoming buffer for the result to reuse at all.</p>
+<p>The distinction is exactly the right size to be careful about. The accumulator operand doesn't <em>guarantee</em> in-place accumulation; it <em>enables</em> it. Whether the write actually happens in place is decided later, by bufferization's own conflict analysis and its function-boundary handling, which is Post 4's subject. What the operand settles, at definition time, is whether in-place is available at all. The pure <code>C = A · B</code> form forecloses it: no incoming buffer, nothing for any later analysis to reuse, a fresh allocation guaranteed. The GEMM form keeps the option open for bufferization to take.</p>
+<p>So the accumulator operand is not a modeling nicety. It's the op signature being shaped, at definition time, to preserve an option that only a much later stage can act on. That's the same force as the block axis, one stage over: an earlier choice made to serve a need further down the pipeline.</p>
+<p>Two decisions, the same shape. The block axis was the type stage constrained by the lowering stage. The accumulator was the op stage constrained by the bufferization stage. Neither makes sense from inside its own stage: last-axis blocking looks arbitrary next to the type, the accumulator operand looks like a stylistic quirk next to the op. Each is justified only by a stage further down. That's what "co-designed" means in practice, and it's why a dialect is not a parts catalog. The parts are easy. The constraints between them, running across stages from type definition to the end of the pipeline, are the actual design.</p>
+<h2 id="what-s-deferred-and-what-s-next">What's deferred, and what's next<a class="zola-anchor" href="#what-s-deferred-and-what-s-next" aria-label="Anchor link for: what-s-deferred-and-what-s-next" style="visibility: hidden;"></a>
+</h2>
+<p>v1 is four ops and one type, and the boundaries are deliberate. The things left out are the ones that would have grown the scope past what one version should carry: a quantized <code>B</code> operand (v1 leaves <code>B</code> in <code>f32</code>), per-channel scales, group quantization across dimension boundaries, and a real lowering for <code>fold_scale</code> (v1 only cleans it up, never lowers it). Further out, past v1.5 and v2, the natural direction is lowering these ops to accelerator backends where MX is a native hardware format rather than something emulated on CPU. That's the long arc; v1 is the IR foundation it would stand on.</p>
+<p>The rest of the series follows the pipeline down, roughly one stage per post:</p>
+<ul>
+<li><strong>Post 2</strong> takes <code>fold_scale</code> and the power-of-two scale type, and shows why folding a block scale is exact for some scalars and impossible for others.</li>
+<li><strong>Post 3</strong> is the lowering: <code>block_matmul</code> becomes a <code>linalg.generic</code>, and the block scale becomes a single <code>floordiv</code> in an affine map. It's the technical center of the project.</li>
+<li><strong>Post 4</strong> is bufferization: how one <code>!mx.tensor</code> value becomes two memory buffers, and how the in-place accumulation promised above actually gets decided.</li>
+<li><strong>Post 5</strong> drives the whole thing to running code, runs into two upstream limits in MLIR, and quantifies the memory traffic the dialect was built to cut.</li>
+</ul>
+<p>The thesis was that a dialect is a set of co-designed decisions, not a parts catalog. The two moments in this post were the evidence: a type that blocks its last axis because a matmul later in the pipeline reduces along it, and an op that carries an accumulator because bufferization near the end of the pipeline needs a destination to write into. The ops are the easy part. What makes it a dialect is that the decisions behind them are wired to each other, across the whole pipeline.</p>
+
+      </article>
+
+      
+      
+
+      
+      
+    </div>
+
+    
+
+
+<footer>
+  <div class="left">
+    <div class="copyright">
+      © 2025 &lt;joseph bak&gt;
+      
+      <span>|</span>
+      Built with <a href="https://www.getzola.org" rel="noreferrer" target="_blank">zola</a> and <a href="https://github.com/isunjn/serene" rel="noreferrer" target="_blank">serene</a>
+      
+    </div>
+  </div>
+
+  <div class="right">
+    
+    
+      
+    
+    
+    <a id="rss-btn" href="https://josephbak.github.io/posts/feed.xml">RSS</a>
+    
+    
+
+    
+    
+    
+    <button id="theme-toggle" aria-label="theme switch">
+      <span class="moon-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M10 7C10 10.866 13.134 14 17 14C18.9584 14 20.729 13.1957 21.9995 11.8995C22 11.933 22 11.9665 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C12.0335 2 12.067 2 12.1005 2.00049C10.8043 3.27098 10 5.04157 10 7ZM4 12C4 16.4183 7.58172 20 12 20C15.0583 20 17.7158 18.2839 19.062 15.7621C18.3945 15.9187 17.7035 16 17 16C12.0294 16 8 11.9706 8 7C8 6.29648 8.08133 5.60547 8.2379 4.938C5.71611 6.28423 4 8.9417 4 12Z" fill="currentColor"></path></svg>
+</span>
+      <span class="sun-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M12 18C8.68629 18 6 15.3137 6 12C6 8.68629 8.68629 6 12 6C15.3137 6 18 8.68629 18 12C18 15.3137 15.3137 18 12 18ZM12 16C14.2091 16 16 14.2091 16 12C16 9.79086 14.2091 8 12 8C9.79086 8 8 9.79086 8 12C8 14.2091 9.79086 16 12 16ZM11 1H13V4H11V1ZM11 20H13V23H11V20ZM3.51472 4.92893L4.92893 3.51472L7.05025 5.63604L5.63604 7.05025L3.51472 4.92893ZM16.9497 18.364L18.364 16.9497L20.4853 19.0711L19.0711 20.4853L16.9497 18.364ZM19.0711 3.51472L20.4853 4.92893L18.364 7.05025L16.9497 5.63604L19.0711 3.51472ZM5.63604 16.9497L7.05025 18.364L4.92893 20.4853L3.51472 19.0711L5.63604 16.9497ZM23 11V13H20V11H23ZM4 11V13H1V11H4Z" fill="currentColor"></path></svg>
+</span>
+    </button>
+    
+  </div>
+</footer>
+
+
+
+
+<dialog id="rss-mask">
+  <div>
+    <a href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml">https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml</a>
+    
+    
+    <button autofocus aria-label="copy" data-link="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z" fill="currentColor"></path></svg>
+
+    </button>
+  </div>
+</dialog>
+
+
+
+  </main>
+</div>
+
+  
+<script src="/js/lightense.min.js"></script>
+
+
+  <script src="https://josephbak.github.io/js/main.js"></script>
+</body>
+
+</html>
