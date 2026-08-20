@@ -210,3 +210,83 @@ the op it *matches*, and this one matches the dequantize consumer, not the
 Three shapes: a stack, an identity, a dequantize-consumer. Three clearings: merge,
 eliminate, relocate. All three are `OpRewritePattern` — greedy-driver
 canonicalizations, opportunistic and level-preserving. Not one writes a scale.
+
+## What the patterns don't cover
+
+Three patterns clear three shapes: a constant chain, an identity, a
+dequantize-consumer. Their coverage is the union of those three, and the union has
+holes.
+
+Take a single `fold_scale` whose result feeds something other than a
+`dequantize_block` — a function return, say, or a `block_matmul`:
+```mlir
+%s = mx.fold_scale %t, %c : !mx.tensor<...>, f32 -> !mx.tensor<...>
+return %s : !mx.tensor<...>
+```
+No pattern fires. `FoldScalePow2` needs a *stack* of two `fold_scale` ops; there's
+only one. `FoldScaleIdentity` needs α to be exactly `1.0`; this α isn't.
+`DequantizeFoldScaleFusion` needs the consumer to be a `dequantize_block`; a
+`return` isn't. So the op survives canonicalization untouched — and here's the
+part that matters: whether `%c` is a clean power of two like `2.0` is irrelevant.
+No pattern even inspects it, because no pattern absorbs α into a scale. The
+power-of-two question, the whole exactness story from the first half of this post,
+never comes up. That story is about a lowering v1 doesn't have.
+
+What happens to the survivor is the point. It flows into the conversion pass, which
+marks the `mx` dialect illegal and must translate every `mx` op to `linalg`.
+`fold_scale` has no conversion pattern — by design, it was only ever meant to be
+canonicalized away. So the conversion driver hits an illegal op it cannot rewrite
+and fails the whole compilation:
+```mlir
+error: failed to legalize operation 'mx.fold_scale' that was explicitly marked illegal
+```
+
+That is not a bug. It's the boundary v1 drew, enforcing itself. The two drivers
+behave oppositely on an unmatched op: canonicalization is opportunistic, so no match
+is a no-op; conversion is mandatory, so no match is a hard error. A `fold_scale` the
+three patterns don't clear sails through the first driver and dies in the second.
+The failure is loud and it happens at compile time, before any wrong number is
+produced. Compare the alternative — a lowering that quietly rounds `4.5 · S` to the
+wrong power of two and ships a silently corrupt scale. Between a clear compile-time
+failure on an unsupported input and a silent runtime corruption, v1 takes the
+failure.
+
+Making the coverage total is possible: a real `fold_scale` lowering that applies α
+directly instead of relying on a downstream `dequantize_block` to absorb it —
+folding power-of-two α into the E8M0 scale, and widening to a larger scale type for
+everything else. That's a cleaner design on the coverage axis. v1 doesn't need it —
+its job is the dialect and the canonicalization contract, and for the shapes v1
+supports, the three patterns clear every `fold_scale` before conversion.
+
+## What it would take to make it exact
+
+The three patterns clear `fold_scale` without ever absorbing α into `S`. That was
+the v1 decision: canonicalize the op away, don't lower it. But the exponent-field
+add from the top of this post — the exact, one-integer-add fold that the op is
+named for — is still sitting there unused. It's worth being precise about what it
+would take to actually ship it, because that's where the power-of-two restriction
+stops being a footnote and becomes load-bearing.
+
+A real `fold_scale` lowering writes a new scale. Absorbing α means computing `α·S`
+and storing it back into the scale tensor — and that tensor is `f8E8M0FNU`, which
+represents powers of two and nothing else. In v1, α is harmless no matter what it
+is: `FoldScalePow2` multiplies `4.5` into another f32 constant and leaves it as an
+f32 value on the op. f32 holds `4.5` exactly, and the value never reaches a scale.
+The moment a lowering tries to write `α·S` into the E8M0 scale, that changes. If
+α = 4.5, then `α·S` is not a power of two, and `f8E8M0FNU` cannot store it. The
+result is a verifier failure or a silent round to the wrong power of two — the
+exact corruption v1 avoided by never writing the scale at all.
+
+So the guard that `FoldScalePow2` conspicuously lacks becomes mandatory the instant
+absorption is real. The lowering has to check that α is a power of two, take the
+exponent-field add when it is, and widen to a larger scale type — carrying α
+separately in f32 — when it isn't. That check isn't defensive boilerplate. It's the
+lowering admitting what the E8M0 format demanded all along: the fold is exact only
+on the values the scale type can represent, and the exponent-field add is what
+"exact" looks like when it can.
+
+v1 keeps `fold_scale` on the canonicalization side of the line, where α never
+touches a scale and the power-of-two question never has to be asked. v1.5 moves it
+across, at which point the question is unavoidable and the guard is the answer. The
+op has carried the name of the exact fold the whole time. v1 just never had to make
+it exact.
