@@ -5,9 +5,139 @@
 	<link rel="self" type="application/atom+xml" href="https://josephbak.github.io/posts/feed.xml"/>
   <link rel="alternate" type="text/html" href="https://josephbak.github.io/posts/"/>
   
-	<updated>2026-08-12T00:00:00+00:00</updated>
+	<updated>2026-08-17T00:00:00+00:00</updated>
 	
 	<id>https://josephbak.github.io/posts/feed.xml</id>
+	<entry xml:lang="en">
+		<title>Canonicalization and the E8M0 Power-of-Two Trick</title>
+		<published>2026-08-17T00:00:00+00:00</published>
+		<updated>2026-08-17T00:00:00+00:00</updated>
+		<link rel="alternate" type="text/html" href="https://josephbak.github.io/posts/canonicalization-e8m0-power-of-two/"/>
+		<id>https://josephbak.github.io/posts/canonicalization-e8m0-power-of-two/</id>
+    
+		<content type="html" xml:base="https://josephbak.github.io/posts/canonicalization-e8m0-power-of-two/">&lt;!-- KaTeX includes (inline; requires markdown.render_unsafe = true) --&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;katex.min.css&quot;&gt;
+&lt;script defer src=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;katex.min.js&quot;&gt;&lt;&#x2F;script&gt;
+&lt;script defer src=&quot;https:&#x2F;&#x2F;cdn.jsdelivr.net&#x2F;npm&#x2F;katex@0.16.10&#x2F;dist&#x2F;contrib&#x2F;auto-render.min.js&quot;&gt;&lt;&#x2F;script&gt;
+&lt;script&gt;
+ document.addEventListener(&quot;DOMContentLoaded&quot;, function() {
+ renderMathInElement(document.body, {
+ delimiters: [
+ {left: &quot;$$&quot;, right: &quot;$$&quot;, display: true},
+ {left: &quot;\\[&quot;, right: &quot;\\]&quot;, display: true},
+ {left: &quot;$&quot;, right: &quot;$&quot;, display: false},
+ {left: &quot;\\(&quot;, right: &quot;\\)&quot;, display: false}
+ ],
+ throwOnError: false
+ });
+ });
+&lt;&#x2F;script&gt;
+&lt;!-- SECTION 1 — the op named after a trick it doesn&#x27;t perform --&gt;
+&lt;h2 id=&quot;the-fold-in-the-name&quot;&gt;The fold in the name&lt;a class=&quot;zola-anchor&quot; href=&quot;#the-fold-in-the-name&quot; aria-label=&quot;Anchor link for: the-fold-in-the-name&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;The dialect has an operation called &lt;code&gt;mx.fold_scale&lt;&#x2F;code&gt;. The name describes a specific, elegant rewrite: a scale-only multiply sitting in front of a block-scaled value can be folded &lt;em&gt;into&lt;&#x2F;em&gt; the shared scale instead of touching the data. For a block-scaled tensor, the value model is $X_i = S \cdot M_i$: one shared scale $S$ per block, one mantissa $M_i$ per element (&lt;a href=&quot;https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;designing-mx-dialect&#x2F;&quot;&gt;Post 1&lt;&#x2F;a&gt; covers the type and the four ops). Multiplying the whole block by a scalar $\alpha$ is then just scalar associativity:&lt;&#x2F;p&gt;
+&lt;p&gt;$$\alpha \cdot (S \cdot M_i) = (\alpha \cdot S) \cdot M_i$$&lt;&#x2F;p&gt;
+&lt;p&gt;Push $\alpha$ into $S$ and we rescale an entire block by rewriting one scale value,
+leaving every mantissa untouched. That is what &quot;fold scale&quot; means.&lt;&#x2F;p&gt;
+&lt;p&gt;v1 never does it.&lt;&#x2F;p&gt;
+&lt;p&gt;The scale $S$ is stored as &lt;code&gt;f8E8M0FNU&lt;&#x2F;code&gt;: an 8-bit exponent, zero mantissa bits, representing powers of two and nothing else (Post 1 leans on this; it&#x27;s the whole reason the format is cheap). That structure is what would make the fold exact: if $\alpha$ is itself a power of two, then $\alpha \cdot S$ is a power of two too, and folding becomes a single integer add on the exponent field. No rounding, no new storage, type-safe. It is one of the cleanest rewrites the format allows, and v1 ships three canonicalization patterns, none of which perform it.&lt;&#x2F;p&gt;
+&lt;p&gt;This post is about that gap. The exponent-field add is the intuition the op is named for, not the code v1 runs. What v1 runs is three rewrites that &lt;em&gt;clear&lt;&#x2F;em&gt; &lt;code&gt;fold_scale&lt;&#x2F;code&gt; out of the IR before it reaches lowering, by merging constants, dropping identities, and relocating the scale into the f32 domain, never once writing an E8M0 scale. Why v1 clears the op instead of lowering it is the point. First, what makes the fold exact at all?&lt;&#x2F;p&gt;
+&lt;!-- SECTION 2 — the exponent-field add: the intuition you&#x27;re about to not use --&gt;
+&lt;h2 id=&quot;why-powers-of-two-make-it-exact&quot;&gt;Why powers of two make it exact&lt;a class=&quot;zola-anchor&quot; href=&quot;#why-powers-of-two-make-it-exact&quot; aria-label=&quot;Anchor link for: why-powers-of-two-make-it-exact&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Start with what &lt;code&gt;f8E8M0FNU&lt;&#x2F;code&gt; represents: $2^e$ for the stored exponent $e$, nothing else. There is no fraction to carry, no mantissa to round. The representable set is exactly the powers of two, and the encoding is just the integer $e$.&lt;&#x2F;p&gt;
+&lt;p&gt;Now multiply two of them. A scale $S = 2^e$, a scalar $\alpha$ that also happens to be a power of two, $\alpha = 2^a$:&lt;&#x2F;p&gt;
+&lt;p&gt;$$\alpha \cdot S = 2^{a} \cdot 2^{e} = 2^{a+e}$$&lt;&#x2F;p&gt;
+&lt;p&gt;The product is a power of two, so it lands exactly on a representable E8M0 value, as long as $a+e$ stays within the exponent&#x27;s range. The add is always exact; the encoding can still underflow or overflow at the extremes.&lt;&#x2F;p&gt;
+&lt;p&gt;Computing it doesn&#x27;t require a floating-point multiply at all: $a + e$ is just an integer add on the exponent field. No rounding step exists in that path, so there is nothing to lose. That is the exponent-field add, and it is why folding a power-of-two scalar into an E8M0 scale is exact by construction.&lt;&#x2F;p&gt;
+&lt;p&gt;The alternative shows what &quot;exact&quot; is buying us. Take $\alpha = 4.5$. Now:&lt;&#x2F;p&gt;
+&lt;p&gt;$$\alpha \cdot S = 4.5 \cdot 2^{e}$$&lt;&#x2F;p&gt;
+&lt;p&gt;That is not a power of two. It sits between $2^{e+2} = 4 \cdot 2^{e}$ and $2^{e+3} = 8 \cdot 2^{e}$, and &lt;code&gt;f8E8M0FNU&lt;&#x2F;code&gt; has no encoding for anything in between. To store it we would have to round to one neighbor or the other, and neither is the value we wanted. So folding a non-power-of-two scalar into the scale is not the same exact operation applied to a different number. It is a different operation: one that silently corrupts the scale, or fails the verifier if we check. &quot;Exact&quot; means the result stays inside E8M0&#x27;s representable set with no rounding; only a power-of-two $\alpha$ does that.&lt;&#x2F;p&gt;
+&lt;p&gt;This is the trick the operation is named for. It is genuinely elegant: a scale
+multiply reduced to an integer add, exact, touching one scale value instead of a
+whole block. Everything in the setup points at implementing it.&lt;&#x2F;p&gt;
+&lt;!-- SECTION 3 — why v1 doesn&#x27;t absorb into S: the causal chain --&gt;
+&lt;h2 id=&quot;why-v1-doesn-t-do-it&quot;&gt;Why v1 doesn&#x27;t do it&lt;a class=&quot;zola-anchor&quot; href=&quot;#why-v1-doesn-t-do-it&quot; aria-label=&quot;Anchor link for: why-v1-doesn-t-do-it&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;The reason isn&#x27;t that the exponent-field add is hard. It&#x27;s one integer add. The reason is what implementing it would drag in.&lt;&#x2F;p&gt;
+&lt;p&gt;Folding $\alpha$ into $S$ means writing a &lt;em&gt;new scale value&lt;&#x2F;em&gt;. The add $a + e$ produces an exponent that has to be stored back into the scale tensor. That is not a rewrite of the IR&#x27;s structure: it&#x27;s a computation that produces data and puts it somewhere. Producing-and-storing a value is what lowering does, not what canonicalization does. Canonicalization rewrites IR into simpler IR at the same level; it never emits the runtime arithmetic that computes a scale and writes it
+down. So the elegant one-line trick, taken seriously, is a lowering.&lt;&#x2F;p&gt;
+&lt;p&gt;That reclassification is the whole cost. A &lt;code&gt;fold_scale&lt;&#x2F;code&gt; with a real lowering path is an op that survives canonicalization and arrives at the conversion stage needing a conversion pattern, a bufferized result, and — the part that matters — a guard. Because once $\alpha$ reaches an E8M0 scale, a non-power-of-two $\alpha$ is a live correctness bug. $4.5 \cdot S$ has to round to a wrong power of two, silently. The lowering can&#x27;t be shipped without a check that $\alpha$ is a power of two, rejecting or specially handling everything else. The guard isn&#x27;t optional decoration on the lowering; it&#x27;s the lowering&#x27;s admission that the trick only works on the values it was designed for.&lt;&#x2F;p&gt;
+&lt;p&gt;v1&#x27;s thesis doesn&#x27;t need any of that. The point of v1 is the dialect design and the canonicalization contract: that &lt;code&gt;fold_scale&lt;&#x2F;code&gt; is well-formed, that it composes, and that it can be cleared from the IR before lowering. A runtime scale-rewrite proves none of that better than clearing the op does, and it costs a whole
+lowering path plus a mandatory guard. So v1 makes the opposite call. &lt;code&gt;fold_scale&lt;&#x2F;code&gt; stays canonicalization-only: no lowering, no guard, no scale ever rewritten. The op is not lowered: it is &lt;em&gt;eliminated&lt;&#x2F;em&gt;, before the conversion stage ever sees it.&lt;&#x2F;p&gt;
+&lt;p&gt;That single decision is what the three patterns exist to carry out. If &lt;code&gt;fold_scale&lt;&#x2F;code&gt; will never be lowered, then every &lt;code&gt;fold_scale&lt;&#x2F;code&gt; in the IR has to be gone by the time conversion runs, because conversion has no pattern for it and a surviving op is a hard error. Clearing it is not an optimization. It is the thing that makes the canonicalization-only decision safe.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;three-patterns-three-shapes&quot;&gt;Three patterns, three shapes&lt;a class=&quot;zola-anchor&quot; href=&quot;#three-patterns-three-shapes&quot; aria-label=&quot;Anchor link for: three-patterns-three-shapes&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;Clearing every &lt;code&gt;fold_scale&lt;&#x2F;code&gt; before conversion is the job of three canonicalization patterns. None touches $S$; each matches a different shape of IR and clears it a different way.&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;Merge — &lt;code&gt;FoldScalePow2&lt;&#x2F;code&gt;.&lt;&#x2F;strong&gt; Two &lt;code&gt;fold_scale&lt;&#x2F;code&gt; ops stacked on the same value
+collapse into one. Given&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;mlir&quot; class=&quot;language-mlir z-code&quot;&gt;&lt;code class=&quot;language-mlir&quot; data-lang=&quot;mlir&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%inner = mx.fold_scale %t, %alpha1 : !mx.tensor&amp;lt;...&amp;gt;, f32 -&amp;gt; !mx.tensor&amp;lt;...&amp;gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%outer = mx.fold_scale %inner, %alpha2 : !mx.tensor&amp;lt;...&amp;gt;, f32 -&amp;gt; !mx.tensor&amp;lt;...&amp;gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;with &lt;code&gt;%alpha1 = 4.0&lt;&#x2F;code&gt; and &lt;code&gt;%alpha2 = 8.0&lt;&#x2F;code&gt;, the pattern replaces both with a single &lt;code&gt;fold_scale&lt;&#x2F;code&gt; carrying the product:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;mlir&quot; class=&quot;language-mlir z-code&quot;&gt;&lt;code class=&quot;language-mlir&quot; data-lang=&quot;mlir&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%c = arith.constant 3.200000e+01 : f32   &#x2F;&#x2F; 4.0 \cdot 8.0, folded at compile time
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%r = mx.fold_scale %t, %c : !mx.tensor&amp;lt;...&amp;gt;, f32 -&amp;gt; !mx.tensor&amp;lt;...&amp;gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;It fires only when both scalars are compile-time constants, because it computes
+the product right there with an &lt;code&gt;APFloat&lt;&#x2F;code&gt; multiply and bakes the result in. The
+greedy driver reapplies it, so a three-deep stack ($2.0$, $4.0$, $8.0$) collapses
+to one op holding $64.0$. Two honest notes. There is no power-of-two check on the
+constants despite the name: it folds $4.0 \cdot 8.0$ the same as it would fold any
+two floats, because the product is never written into an E8M0 scale, so a
+non-power-of-two result harms nothing. The fold is an f32 &lt;code&gt;APFloat&lt;&#x2F;code&gt; multiply,
+not the exponent-field add from the intuition. Same result for constant inputs,
+different mechanism: the exponent-field add is &lt;em&gt;why folding would be exact&lt;&#x2F;em&gt;; the
+&lt;code&gt;APFloat&lt;&#x2F;code&gt; multiply is &lt;em&gt;what the code does&lt;&#x2F;em&gt;.&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;Eliminate — &lt;code&gt;FoldScaleIdentity&lt;&#x2F;code&gt;.&lt;&#x2F;strong&gt; Scaling by one is a no-op. The pattern checks
+the scalar is exactly $1.0$ and rewires every use of the result straight to the
+input:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;mlir&quot; class=&quot;language-mlir z-code&quot;&gt;&lt;code class=&quot;language-mlir&quot; data-lang=&quot;mlir&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%r = mx.fold_scale %t, %one : ...   &#x2F;&#x2F; %one = 1.0
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;&#x2F;&#x2F; disappears; uses of %r become %t
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;No new op. This is elimination, not folding.&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;Relocate — &lt;code&gt;DequantizeFoldScaleFusion&lt;&#x2F;code&gt;.&lt;&#x2F;strong&gt; A cross-op rewrite, and the only one
+that clears a &lt;code&gt;fold_scale&lt;&#x2F;code&gt; by moving its scalar somewhere else. Given a
+&lt;code&gt;dequantize_block&lt;&#x2F;code&gt; fed by a &lt;code&gt;fold_scale&lt;&#x2F;code&gt;:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;mlir&quot; class=&quot;language-mlir z-code&quot;&gt;&lt;code class=&quot;language-mlir&quot; data-lang=&quot;mlir&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%s = mx.fold_scale %t, %alpha : !mx.tensor&amp;lt;...&amp;gt;, f32 -&amp;gt; !mx.tensor&amp;lt;...&amp;gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%d = mx.dequantize_block %s : !mx.tensor&amp;lt;...&amp;gt; -&amp;gt; tensor&amp;lt;32x64xf32&amp;gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;it dequantizes the original tensor first, then applies $\alpha$ as an ordinary f32
+multiply on the result:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;mlir&quot; class=&quot;language-mlir z-code&quot;&gt;&lt;code class=&quot;language-mlir&quot; data-lang=&quot;mlir&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%d = mx.dequantize_block %t : !mx.tensor&amp;lt;...&amp;gt; -&amp;gt; tensor&amp;lt;32x64xf32&amp;gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%sp = tensor.splat %alpha : tensor&amp;lt;32x64xf32&amp;gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%r  = arith.mulf %d, %sp : tensor&amp;lt;32x64xf32&amp;gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;The pattern matches on the &lt;em&gt;consumer&lt;&#x2F;em&gt; (&lt;code&gt;dequantize_block&lt;&#x2F;code&gt;) and walks backward to its producer with &lt;code&gt;getDefiningOp&amp;lt;FoldScaleOp&amp;gt;()&lt;&#x2F;code&gt;. If the producer is a &lt;code&gt;fold_scale&lt;&#x2F;code&gt;, it rewrites the pair. The &lt;code&gt;fold_scale&lt;&#x2F;code&gt; is gone; the scaling survives as a plain float multiply on the dequantized tensor. Fusion never evaluates $\alpha$, it just hands it to a runtime &lt;code&gt;arith.mulf&lt;&#x2F;code&gt;, so a runtime $\alpha$ works as well as a constant: nothing here asks whether $\alpha$ is a power of two, or even whether it&#x27;s known at compile time. When $\alpha$ &lt;em&gt;is&lt;&#x2F;em&gt; a constant, the greedy driver folds the splat into a &lt;code&gt;dense&lt;&#x2F;code&gt; attribute (&lt;code&gt;arith.constant dense&amp;lt;4.000000e+00&amp;gt; : tensor&amp;lt;32x64xf32&amp;gt;&lt;&#x2F;code&gt;); when it&#x27;s a function argument, the &lt;code&gt;tensor.splat %arg&lt;&#x2F;code&gt; stays. Same pattern, two shapes of output.&lt;&#x2F;p&gt;
+&lt;p&gt;Where each pattern is registered matters. &lt;code&gt;FoldScalePow2&lt;&#x2F;code&gt; and &lt;code&gt;FoldScaleIdentity&lt;&#x2F;code&gt; hang off &lt;code&gt;FoldScaleOp&lt;&#x2F;code&gt;: they match a &lt;code&gt;fold_scale&lt;&#x2F;code&gt; directly. &lt;code&gt;DequantizeFoldScaleFusion&lt;&#x2F;code&gt; hangs off &lt;code&gt;DeQuantizeBlockOp&lt;&#x2F;code&gt;, not &lt;code&gt;FoldScaleOp&lt;&#x2F;code&gt;. It matches the dequantize consumer and walks back to the &lt;code&gt;fold_scale&lt;&#x2F;code&gt; it removes. A pattern is registered on the op it matches, not the op it deletes.&lt;&#x2F;p&gt;
+&lt;p&gt;Three shapes: a stack, an identity, a dequantize-consumer. Three clearings: merge, eliminate, relocate. All three are &lt;code&gt;OpRewritePattern&lt;&#x2F;code&gt;, greedy-driver canonicalizations, opportunistic and level-preserving. Not one writes a scale.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;what-the-patterns-don-t-cover&quot;&gt;What the patterns don&#x27;t cover&lt;a class=&quot;zola-anchor&quot; href=&quot;#what-the-patterns-don-t-cover&quot; aria-label=&quot;Anchor link for: what-the-patterns-don-t-cover&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;The three patterns cover three shapes, and their union has holes.&lt;&#x2F;p&gt;
+&lt;p&gt;Take a single &lt;code&gt;fold_scale&lt;&#x2F;code&gt; whose result feeds something other than a &lt;code&gt;dequantize_block&lt;&#x2F;code&gt;, such as a function return or a &lt;code&gt;block_matmul&lt;&#x2F;code&gt;:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;mlir&quot; class=&quot;language-mlir z-code&quot;&gt;&lt;code class=&quot;language-mlir&quot; data-lang=&quot;mlir&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;%s = mx.fold_scale %t, %c : !mx.tensor&amp;lt;...&amp;gt;, f32 -&amp;gt; !mx.tensor&amp;lt;...&amp;gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;return %s : !mx.tensor&amp;lt;...&amp;gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;No pattern fires. &lt;code&gt;FoldScalePow2&lt;&#x2F;code&gt; needs a &lt;em&gt;stack&lt;&#x2F;em&gt; of two &lt;code&gt;fold_scale&lt;&#x2F;code&gt; ops; there&#x27;s
+only one. &lt;code&gt;FoldScaleIdentity&lt;&#x2F;code&gt; needs $\alpha$ to be exactly $1.0$; this $\alpha$ isn&#x27;t.
+&lt;code&gt;DequantizeFoldScaleFusion&lt;&#x2F;code&gt; needs the consumer to be a &lt;code&gt;dequantize_block&lt;&#x2F;code&gt;; a
+&lt;code&gt;return&lt;&#x2F;code&gt; isn&#x27;t. So the op survives canonicalization untouched, and here&#x27;s the part that matters: whether &lt;code&gt;%c&lt;&#x2F;code&gt; is a clean power of two like $2.0$ is irrelevant. No pattern even inspects it, because no pattern absorbs $\alpha$ into a scale. The power-of-two question, the whole exactness story from the first half of this post, never comes up.&lt;&#x2F;p&gt;
+&lt;p&gt;What happens to the survivor is the point. It flows into the conversion pass, which
+marks the &lt;code&gt;mx&lt;&#x2F;code&gt; dialect illegal and must translate every &lt;code&gt;mx&lt;&#x2F;code&gt; op to &lt;code&gt;linalg&lt;&#x2F;code&gt;.
+&lt;code&gt;fold_scale&lt;&#x2F;code&gt; has no conversion pattern, by design; it was only ever meant to be
+canonicalized away. So the conversion driver hits an illegal op it cannot rewrite
+and fails the whole compilation:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;mlir&quot; class=&quot;language-mlir z-code&quot;&gt;&lt;code class=&quot;language-mlir&quot; data-lang=&quot;mlir&quot;&gt;&lt;span class=&quot;z-text z-plain&quot;&gt;error: failed to legalize operation &amp;#39;mx.fold_scale&amp;#39; that was explicitly marked illegal
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;That is not a bug. It&#x27;s the boundary v1 drew, enforcing itself. The two drivers behave oppositely on an unmatched op: canonicalization is opportunistic, so no match is a no-op; conversion is mandatory, so no match is a hard error. A &lt;code&gt;fold_scale&lt;&#x2F;code&gt; the three patterns don&#x27;t clear sails through the first driver and dies in the second. The failure is loud and it happens at compile time, before any wrong number is produced. Compare the alternative: a lowering that quietly rounds $4.5 \cdot S$ to the wrong power of two and ships a silently corrupt scale. Between a clear compile-time failure on an unsupported input and a silent runtime corruption, v1 takes the failure.&lt;&#x2F;p&gt;
+&lt;p&gt;Making the coverage total is possible, but it takes a real &lt;code&gt;fold_scale&lt;&#x2F;code&gt; lowering: one that applies $\alpha$ without leaning on a downstream &lt;code&gt;dequantize_block&lt;&#x2F;code&gt; to absorb it. That&#x27;s a cleaner design on the coverage axis, and more than v1 needs. v1&#x27;s job is the dialect and the canonicalization contract, and for the shapes v1 supports, the three patterns clear every &lt;code&gt;fold_scale&lt;&#x2F;code&gt; before conversion.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;what-it-would-take-to-make-it-exact&quot;&gt;What it would take to make it exact&lt;a class=&quot;zola-anchor&quot; href=&quot;#what-it-would-take-to-make-it-exact&quot; aria-label=&quot;Anchor link for: what-it-would-take-to-make-it-exact&quot; style=&quot;visibility: hidden;&quot;&gt;&lt;&#x2F;a&gt;
+&lt;&#x2F;h2&gt;
+&lt;p&gt;The real lowering is where the power-of-two restriction has to be enforced. The exponent-field add from the top of this post, the exact one-integer-add fold the op is named for, is what it would run.&lt;&#x2F;p&gt;
+&lt;p&gt;Writing a new scale means computing $\alpha \cdot S$ and storing it into the &lt;code&gt;f8E8M0FNU&lt;&#x2F;code&gt; scale tensor. In v1, $\alpha$ is harmless no matter what it is: &lt;code&gt;FoldScalePow2&lt;&#x2F;code&gt; multiplies $4.5$ into another f32 constant and leaves it as an f32 value on the op. f32 holds $4.5$ exactly, and the value never reaches a scale. The moment a lowering tries to write $\alpha \cdot S$ into the scale, that changes. If $\alpha = 4.5$, then $\alpha \cdot S$ is not a power of two, and &lt;code&gt;f8E8M0FNU&lt;&#x2F;code&gt; cannot store it: a verifier failure, or a silent round to the wrong power of two, the exact corruption v1 avoided by never writing the scale at all.&lt;&#x2F;p&gt;
+&lt;p&gt;So the guard &lt;code&gt;FoldScalePow2&lt;&#x2F;code&gt; conspicuously lacks becomes mandatory the instant absorption is real. The lowering checks that $\alpha$ is a power of two, takes the exponent-field add when it is, and widens to a larger scale type when it isn&#x27;t: keep the E8M0 block scale and carry the non-power-of-two part as a separate f32 factor, so the value reconstructs as two scales multiplied instead of one. That check isn&#x27;t defensive boilerplate. It&#x27;s the lowering admitting what the E8M0 format demanded all along: the fold is exact only on the values the scale type can represent, and the exponent-field add is what &quot;exact&quot; looks like when it can.&lt;&#x2F;p&gt;
+&lt;p&gt;v1 keeps &lt;code&gt;fold_scale&lt;&#x2F;code&gt; on the canonicalization side of the line, where $\alpha$ never touches a scale and the power-of-two question never has to be asked. v1.5 moves it across, at which point the question is unavoidable and the guard is the answer. The op has carried the name of the exact fold the whole time. v1 just never had to make it exact.&lt;&#x2F;p&gt;
+</content>
+	</entry>
 	<entry xml:lang="en">
 		<title>A Dialect Is a Set of Co-Designed Decisions: Designing for MX Quantization in MLIR</title>
 		<published>2026-08-12T00:00:00+00:00</published>

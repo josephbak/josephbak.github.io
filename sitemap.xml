@@ -71,6 +71,10 @@
         <loc>https://josephbak.github.io/posts/</loc>
     </url>
     <url>
+        <loc>https://josephbak.github.io/posts/canonicalization-e8m0-power-of-two/</loc>
+        <lastmod>2026-08-17</lastmod>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/posts/designing-mx-dialect/</loc>
         <lastmod>2026-08-12</lastmod>
     </url>
@@ -88,6 +92,9 @@
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/cache-optimization/</loc>
+    </url>
+    <url>
+        <loc>https://josephbak.github.io/tags/canonicalization/</loc>
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/category-theory/</loc>
