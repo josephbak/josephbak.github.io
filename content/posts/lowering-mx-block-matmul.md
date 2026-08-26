@@ -2,7 +2,7 @@
 title = "3 - Lowering MX Block-Matmul to linalg.generic with Block-Scale Affine Maps"
 description = "Lowering a block-scaled matmul to linalg.generic: four indexing maps, one floordiv on the scale operand, and why that single choice makes the lowering clean and later blocks vectorization."
 slug = "lowering-mx-block-matmul"
-date = 2026-08-24
+date = 2026-08-26
 weight = 3
 draft = false
 [taxonomies]
