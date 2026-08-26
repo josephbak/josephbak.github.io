@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  
+  
+    
+  
+  <meta name="description" content="Lowering a block-scaled matmul to linalg.generic: four indexing maps, one floordiv on the scale operand, and why that single choice makes the lowering clean and later blocks vectorization.">
+
+  <title>Lowering MX Block-Matmul to linalg.generic with Block-Scale Affine Maps</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="https://josephbak.github.io/img/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://josephbak.github.io/img/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://josephbak.github.io/img/apple-touch-icon.png">
+  
+  <style>
+
+  /* light mode colors */
+  body {
+    --primary-color: #5871a2;
+    --primary-pale-color: #5871a233;
+    --primary-decoration-color: #5871a210;
+    --bg-color: #ffffff;
+    --text-color: #2f3030;
+    --text-pale-color: #767676;
+    --text-decoration-color: #a9a9a9;
+    --highlight-mark-color: #5f75b020;
+
+    --callout-note-color: #5871a2;
+    --callout-tip-color: #268556;
+    --callout-important-color: #885fc9;
+    --callout-warning-color: #ab6632;
+    --callout-caution-color: #c64e4e;
+  }
+
+  /* dark mode colors */
+  body.dark {
+    --primary-color: #6f8fd1;
+    --primary-pale-color: #6f8fd166;
+    --primary-decoration-color: #6f8fd112;
+    --bg-color: #1c1c1c;
+    --text-color: #c1c1c1;
+    --text-pale-color: #848484;
+    --text-decoration-color: #5f5f5f;
+    --highlight-mark-color: #8296cb3b;
+
+    --callout-note-color: #6f8fd1;
+    --callout-tip-color: #47976f;
+    --callout-important-color: #9776cd;
+    --callout-warning-color: #ad7a52;
+    --callout-caution-color: #d06161;
+  }
+
+  /* typography */
+  body {
+    --main-font: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --code-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --homepage-max-width: 768px;
+    --main-max-width: 768px;
+    --avatar-size: 60px;
+    --font-size: 16px;
+    --line-height: 1.75;
+    --img-border-radius: 0px;
+    --detail-border-radius: 0px;
+    --dark-mode-img-brightness: 0.75;
+    --dark-mode-chart-brightness: 0.75;
+    --inline-code-border-radius: 2px;
+    --inline-code-bg-color: var(--primary-decoration-color);
+    --block-code-border-radius: 0px;
+    --block-code-border-color: var(--primary-color);
+    --detail-border-color: var(--primary-color);
+  }
+
+</style>
+
+  <link rel="stylesheet" href="https://josephbak.github.io/main.css">
+  
+
+<link id="hl" rel="stylesheet" type="text/css" href="/hl-light.css" />
+
+
+
+  
+</head>
+
+<body class="post">
+  
+  <script>
+    const theme = sessionStorage.getItem('theme');
+    const match = window.matchMedia("(prefers-color-scheme: dark)").matches
+    if ((theme && theme == 'dark') || (!theme && match)) {
+      document.body.classList.add('dark');
+      const hl = document.querySelector('link#hl');
+      if (hl) hl.href = 'https://josephbak.github.io/hl-dark.css';
+    }
+  </script>
+  
+  
+<div id="wrapper">
+  <div id="blank"></div>
+  <aside>
+    
+    
+    <nav>
+      <ul>
+        
+        <li>
+          <a class="h2" href="#why-the-matmul-can-t-be-a-matmul">Why the matmul can&#x27;t be a matmul</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#where-the-block-scaling-lives">Where the block scaling lives</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#the-payload-reconstructs-a-one-element-at-a-time">The payload reconstructs A one element at a time</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#one-floordiv-two-bars">One floordiv, two bars</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#the-second-bar-comes-later">The second bar comes later</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#the-map-and-what-follows">The map and what follows</a>
+          
+        </li>
+        
+      </ul>
+    </nav>
+    
+    
+    <button id="back-to-top" aria-label="back to top">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-arrow-up"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+
+    </button>
+    
+  </aside>
+  <main>
+    
+<header>
+  <nav>
+    <a id="back-link" href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts">← Back</a>
+  </nav>
+</header>
+
+
+    <div>
+      
+      
+      
+      
+      <div id="copy-cfg" style="display: none;" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+"></div>
+      
+      <article class="prose">
+        <h1>Lowering MX Block-Matmul to linalg.generic with Block-Scale Affine Maps</h1>
+        <div id="post-info">
+          <div id="date">
+            <span id="publish">Aug 24, 2026</span>
+            </div>
+
+          
+          <div id="tags">
+            <a class="instant" href="https://josephbak.github.io//tags/mlir"><span>#</span>mlir</a><a class="instant" href="https://josephbak.github.io//tags/compilers"><span>#</span>compilers</a><a class="instant" href="https://josephbak.github.io//tags/quantization"><span>#</span>quantization</a>
+          </div>
+          
+        </div>
+
+        
+        
+
+        
+
+        <!-- KaTeX includes (inline; requires markdown.render_unsafe = true) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
+<script>
+ document.addEventListener("DOMContentLoaded", function() {
+ renderMathInElement(document.body, {
+ delimiters: [
+ {left: "$$", right: "$$", display: true},
+ {left: "\\[", right: "\\]", display: true},
+ {left: "$", right: "$", display: false},
+ {left: "\\(", right: "\\)", display: false}
+ ],
+ throwOnError: false
+ });
+ });
+</script>
+<h2 id="why-the-matmul-can-t-be-a-matmul">Why the matmul can't be a matmul<a class="zola-anchor" href="#why-the-matmul-can-t-be-a-matmul" aria-label="Anchor link for: why-the-matmul-can-t-be-a-matmul" style="visibility: hidden;"></a>
+</h2>
+<p>A matrix multiply contracts two operands along a shared dimension. Both are uniform: every element is one value of one type, addressed the same way. <code>linalg.matmul</code> is built for exactly that, and it's the obvious target for lowering a matmul.</p>
+<p>Block-scaled matmul breaks the uniformity on one side. In v1, only the <code>A</code> operand is quantized; <code>B</code> stays a dense <code>f32</code> tensor. The quantized operand <code>A</code> is not one tensor. It's a mantissa tensor at full resolution and a scale tensor at one value per 32-element block along the contraction axis. For a <code>32×64</code> <code>A</code>, that is a <code>32×64</code> mantissa in <code>f8E4M3FN</code> and a <code>32×2</code> scale in <code>f8E8M0FNU</code>: the scale is 32 times coarser along <code>K</code> than the mantissa it belongs to. <code>A</code>'s true value at each position is <code>mantissa · scale_for_its_block</code>, and the two tensors are addressed on different strides.</p>
+<p><code>linalg.matmul</code> cannot express that. It wants two uniform, identically-addressed operands. The only way to hand it a block-scaled <code>A</code> is to reconstruct the full-resolution values first: multiply every mantissa by its block's scale into a dense <code>32×64</code> <code>f32</code> tensor, then multiply that by <code>B</code>. There is no ready-made op for it upstream either. The <code>linalg</code> structured ops are <code>generic</code>, <code>matmul</code>, <code>contract</code>, <code>batch_matmul</code>, and a handful of elementwise and reduction ops; none of them carries a block scale. The scale-aware primitives that do exist, <code>arith.scaling_extf</code> and <code>arith.scaling_truncf</code>, are elementwise conversions, not a contraction.</p>
+<p>Reconstructing <code>A</code> is the one thing worth avoiding. The mantissa lives in <code>f8E4M3FN</code>, one byte per element. Expanding it to an <code>f32</code> reconstruction quadruples that to four bytes per element, and the resulting <code>32×64</code> tensor exists only to be read once by the multiply and thrown away. In a workload whose entire premise is cutting memory traffic, materializing a fat intermediate purely to feed a rigid op is the loss the lowering exists to prevent. Quantizing <code>A</code> and then immediately reconstructing it in full precision defeats the reason for quantizing it.</p>
+<p>With the named ops ruled out, and reconstruction the only way to use one, the lowering target is <code>linalg.generic</code>, which lets each operand carry its own indexing map. That single choice, a generic with a custom map on the scale operand, is what the rest of this post is about. Four indexing maps, and one of them does all the work.</p>
+<h2 id="where-the-block-scaling-lives">Where the block scaling lives<a class="zola-anchor" href="#where-the-block-scaling-lives" aria-label="Anchor link for: where-the-block-scaling-lives" style="visibility: hidden;"></a>
+</h2>
+<p>The op going in is a single <code>mx.block_matmul</code> with three operands:</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">module {
+</span><span class="z-text z-plain">  func.func @block_matmul(%arg0: !mx.tensor&lt;32x64xf8E4M3FN, block_size = 32, scale_type = f8E8M0FNU&gt;, %arg1: tensor&lt;64x64xf32&gt;, %arg2: tensor&lt;32x64xf32&gt;) -&gt; tensor&lt;32x64xf32&gt; {
+</span><span class="z-text z-plain">    %0 = mx.block_matmul %arg0, %arg1, %arg2 : &lt;32x64xf8E4M3FN, block_size = 32, scale_type = f8E8M0FNU&gt;, tensor&lt;64x64xf32&gt;, tensor&lt;32x64xf32&gt; -&gt; tensor&lt;32x64xf32&gt;
+</span><span class="z-text z-plain">    return %0 : tensor&lt;32x64xf32&gt;
+</span><span class="z-text z-plain">  }
+</span><span class="z-text z-plain">}
+</span></code></pre>
+<p>The block-scaled operand <code>%arg0</code> is one <code>!mx.tensor</code> value. The mantissa and its block scale are both inside that type; nothing about the split is visible yet. <code>%arg1</code> (<code>B</code>) and <code>%arg2</code> (the accumulator) are ordinary <code>f32</code> tensors. <a href="https://josephbak.github.io/posts/designing-mx-dialect/">Post 1</a> covers how the type carries the block metadata.</p>
+<p>Here is what <code>mx.block_matmul</code> lowers to:</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">#map = affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;
+</span><span class="z-text z-plain">#map1 = affine_map&lt;(d0, d1, d2) -&gt; (d0, d2 floordiv 32)&gt;
+</span><span class="z-text z-plain">#map2 = affine_map&lt;(d0, d1, d2) -&gt; (d2, d1)&gt;
+</span><span class="z-text z-plain">#map3 = affine_map&lt;(d0, d1, d2) -&gt; (d0, d1)&gt;
+</span><span class="z-text z-plain">module {
+</span><span class="z-text z-plain">  func.func @block_matmul(%arg0: tensor&lt;32x64xf8E4M3FN&gt;, %arg1: tensor&lt;32x2xf8E8M0FNU&gt;, %arg2: tensor&lt;64x64xf32&gt;, %arg3: tensor&lt;32x64xf32&gt;) -&gt; tensor&lt;32x64xf32&gt; {
+</span><span class="z-text z-plain">    %0 = linalg.generic {indexing_maps = [#map, #map1, #map2, #map3], iterator_types = [&quot;parallel&quot;, &quot;parallel&quot;, &quot;reduction&quot;]} ins(%arg0, %arg1, %arg2 : tensor&lt;32x64xf8E4M3FN&gt;, tensor&lt;32x2xf8E8M0FNU&gt;, tensor&lt;64x64xf32&gt;) outs(%arg3 : tensor&lt;32x64xf32&gt;) {
+</span><span class="z-text z-plain">    ^bb0(%in: f8E4M3FN, %in_0: f8E8M0FNU, %in_1: f32, %out: f32):
+</span><span class="z-text z-plain">      %1 = arith.extf %in : f8E4M3FN to f32
+</span><span class="z-text z-plain">      %2 = arith.extf %in_0 : f8E8M0FNU to f32
+</span><span class="z-text z-plain">      %3 = arith.mulf %1, %2 : f32
+</span><span class="z-text z-plain">      %4 = arith.mulf %3, %in_1 : f32
+</span><span class="z-text z-plain">      %5 = arith.addf %out, %4 : f32
+</span><span class="z-text z-plain">      linalg.yield %5 : f32
+</span><span class="z-text z-plain">    } -&gt; tensor&lt;32x64xf32&gt;
+</span><span class="z-text z-plain">    return %0 : tensor&lt;32x64xf32&gt;
+</span><span class="z-text z-plain">  }
+</span><span class="z-text z-plain">}
+</span></code></pre>
+<p>Set the payload region aside for the next section and look at the four indexing maps. The iteration space is <code>(d0, d1, d2)</code>, which is <code>(m, n, k)</code>: rows of the output, columns of the output, and the contraction axis. Three of the four maps are the ordinary matmul projections. <code>#map</code>, the mantissa, reads <code>(m, k)</code>. <code>#map2</code>, <code>B</code>, reads <code>(k, n)</code>. <code>#map3</code>, the accumulator, reads <code>(m, n)</code>. Each is a bare pair of iteration dimensions, passed straight through.</p>
+<p><code>#map1</code>, the scale, is the one that isn't ordinary:</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">#map1 = affine_map&lt;(d0, d1, d2) -&gt; (d0, d2 floordiv 32)&gt;
+</span></code></pre>
+<p>As the contraction sweeps <code>k</code> from 0 to 63, the mantissa is read at every <code>k</code>, but the scale is read at <code>k floordiv 32</code>. For <code>k</code> in 0 through 31 that index is 0; at <code>k = 32</code> it becomes 1. One scale element is shared across a whole block of 32 mantissa elements, which is exactly what a block-scaled format means. The <code>32×2</code> shape of the scale operand is the same fact seen from the other side: 64 contraction positions divided into blocks of 32 gives 2 scale columns, one per block, <code>K / 32</code>.</p>
+<p>That single <code>floordiv</code> is the entire block-scaled semantics. Strip it out and this is a plain matmul; put it in and the scale operand is addressed at block resolution while everything else stays at element resolution. That asymmetry, the thing <code>linalg.matmul</code> could not express, is one arithmetic expression in one of four maps.</p>
+<p>The maps say which element each iteration reads. The next section is what the iteration does with them.</p>
+<h2 id="the-payload-reconstructs-a-one-element-at-a-time">The payload reconstructs <code>A</code> one element at a time<a class="zola-anchor" href="#the-payload-reconstructs-a-one-element-at-a-time" aria-label="Anchor link for: the-payload-reconstructs-a-one-element-at-a-time" style="visibility: hidden;"></a>
+</h2>
+<p>Return to the <code>^bb0</code> region of that lowered op, on its own (the comments are added here; <code>mx-opt</code> prints the region without them):</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">^bb0(%in: f8E4M3FN, %in_0: f8E8M0FNU, %in_1: f32, %out: f32):
+</span><span class="z-text z-plain">  %1 = arith.extf %in   : f8E4M3FN  to f32   // mantissa -&gt; f32
+</span><span class="z-text z-plain">  %2 = arith.extf %in_0 : f8E8M0FNU to f32   // scale    -&gt; f32
+</span><span class="z-text z-plain">  %3 = arith.mulf %1, %2 : f32               // A_real = mantissa * scale
+</span><span class="z-text z-plain">  %4 = arith.mulf %3, %in_1 : f32            // A_real * B
+</span><span class="z-text z-plain">  %5 = arith.addf %out, %4 : f32             // accumulate into C
+</span><span class="z-text z-plain">  linalg.yield %5 : f32
+</span></code></pre>
+<p>Four block arguments, one per operand, in the order the maps were listed: the mantissa scalar, the scale scalar, the <code>B</code> scalar, and the running accumulator. Each is a single value, already selected by that operand's indexing map for this <code>(m, n, k)</code>. The payload never sees a tensor. It sees four numbers and produces one.</p>
+<p>The work is a fused dequantize-then-multiply-accumulate. Widen the mantissa to <code>f32</code>, widen the scale to <code>f32</code>, multiply them to reconstruct <code>A</code>'s true value at this position, multiply that by <code>B</code>, add to the accumulator. The reconstruction <code>mantissa * scale</code> and the contraction <code>* B</code> happen in the same region, on the same scalar, in registers. <code>A</code>'s full-precision value exists for the duration of one multiply-accumulate and is gone.</p>
+<p>That is the point of lowering to a fused generic rather than a dequantize op followed by a matmul. Dequantize-then-matmul would compute every <code>A_real</code>, write all of them into a dense <code>32×64</code> <code>f32</code> tensor, and then read that tensor back in the matmul. The fused form computes each <code>A_real</code> exactly where it is consumed and never writes it anywhere. The reconstructed <code>A</code> is never a value in the program: <code>%3</code> is a scalar in a register, produced and consumed inside one loop iteration, not a tensor-typed result that has to live in memory. There is no <code>32×64</code> <code>f32</code> intermediate to write and reread. Keeping <code>A</code> in its one-byte form instead of expanding it to a four-byte reconstruction is the memory-traffic win the dialect exists for.</p>
+<p>The grouping is deliberate. Floating-point multiply is not associative: each product rounds to the nearest representable value, and regrouping changes which intermediate gets rounded. The payload computes <code>(mantissa * scale) * B</code>, not <code>(mantissa * B) * scale</code>. Because the E8M0 scale is a power of two, <code>mantissa * scale</code> is exact whenever the result stays in the format's normal range: multiplying by a power of two only shifts the exponent and leaves the mantissa bits untouched, so nothing rounds. (At the extremes, a product that overflows to infinity or underflows into the subnormal range can still lose precision; the v1 lowering assumes in-range blocks.) Reconstructing <code>A</code>'s true value first and doing the one lossy multiply against <code>B</code> last is faithful to what the op means: dequantize <code>A</code>, then contract. The other grouping would round a meaningless <code>mantissa * B</code> intermediate and then scale the rounding error.</p>
+<p>One thing the IR does not do: exploit that the scale is a power of two. At the IR level <code>arith.mulf %1, %2</code> is a general <code>f32</code> multiply, and nothing records that <code>%2</code> is constrained to powers of two. A backend emits an ordinary floating-point multiply, not the exponent-add the power-of-two case would in principle allow. The exactness is a property to reason about for correctness, not an optimization the v1 lowering expresses.</p>
+<h2 id="one-floordiv-two-bars">One floordiv, two bars<a class="zola-anchor" href="#one-floordiv-two-bars" aria-label="Anchor link for: one-floordiv-two-bars" style="visibility: hidden;"></a>
+</h2>
+<p><code>#map1</code>, the scale map, puts a <code>floordiv</code> inside an indexing map: <code>(d0, d2 floordiv 32)</code>. The <code>linalg.generic</code> verifies with it; a named matmul op would not.</p>
+<p><code>linalg.matmul</code> and <code>linalg.contract</code> require every indexing map to be a projected permutation: each result is a bare iteration dimension, passed through with no arithmetic. <code>d2 floordiv 32</code> is arithmetic on a dimension, so it is not a projected permutation, and a named op's verifier refuses it outright with "provided affine_map is not a projected permutation."</p>
+<p><code>linalg.generic</code> does not impose that requirement. Its verifier asks a weaker, structural question: taken together, do the operands' indexing maps let you recover the iteration space? Concatenate all four maps into one map from loops to operand coordinates, then try to invert it. If the concatenated map inverts, the op is well-formed; if it doesn't, the op is rejected. The check is on the whole system, not on each map in isolation.</p>
+<p>The scale map, on its own, does not invert: we cannot recover <code>k</code> from <code>k floordiv 32</code>, since 32 different values of <code>k</code> collapse to the same block index. But it does not have to invert on its own. The mantissa map <code>(m, k)</code> exposes both <code>m</code> and <code>k</code> directly, and the <code>B</code> map <code>(k, n)</code> adds <code>n</code>. All three of <code>m</code>, <code>n</code>, and <code>k</code> are recoverable from operands other than the scale, so the scale map rides along on coordinates the system has already pinned down. The concatenated system inverts, and the generic accepts it.</p>
+<p>Whether a non-projective map is fatal depends entirely on that whole-system question. The <code>quantize</code> op in this same dialect shows the other outcome. Its per-block reduction wants to address a block index <code>b</code> and a within-block index <code>j</code> at once, and written naively its input map reads <code>(i, b, j) -&gt; (i, b * 32 + j)</code>, two iteration dimensions fused into one coordinate. There the fusion is fatal, because nothing recovers them: no other operand exposes <code>b</code> and <code>j</code> separately, so <code>b * 32 + j = 32</code> could be <code>(b=1, j=0)</code> or <code>(b=0, j=32)</code> and the system cannot tell which. The map does not invert, the op is rejected, and <code>quantize</code> has to reshape its input with <code>tensor.expand_shape</code> so <code>b</code> and <code>j</code> land on separate axes first. The matmul's <code>floordiv</code> never hits this. It transforms one dimension that another operand already pins down, so there is nothing left to recover.</p>
+<p>This is why the lowering targets a generic in the first place. The op set was designed to be expressible as <code>linalg.generic</code>, not abstracted away from it, and the block-scale access is exactly the kind of map a generic permits and a named matmul op does not. The escape hatch is deliberate: <code>linalg.generic</code> trades the per-map guarantee for a whole-system one, and the block scale needs precisely that trade.</p>
+<h2 id="the-second-bar-comes-later">The second bar comes later<a class="zola-anchor" href="#the-second-bar-comes-later" aria-label="Anchor link for: the-second-bar-comes-later" style="visibility: hidden;"></a>
+</h2>
+<p>The generic cleared the <code>floordiv</code>, but it did not make it a projected permutation. It only postponed the moment that matters.</p>
+<p>The per-map bar that a named matmul op enforces at definition does not disappear when we lower to a generic instead. It reappears in the structured vectorizer. To vectorize a <code>linalg.generic</code>, every indexing map must be a projected permutation, the same requirement <code>linalg.matmul</code> would have imposed up front. The vectorizer will look at <code>d2 floordiv 32</code>, see arithmetic on a dimension, and refuse it, exactly as the named op would have.</p>
+<p>Nothing about the map changed between lowering and vectorization. What changed is which check it faces. The generic waived the per-map bar and asked only that the whole system invert, so the <code>floordiv</code> passed. The vectorizer does not waive it. The same access that read cleanly one pass ago is the one it cannot take as written.</p>
+<p>So the choice that made the lowering clean is the choice that blocks vectorization. One <code>floordiv</code>, legal in the op it lowered to and rejected by the transform that has to run on it next. That collision, and what it takes past it, is a problem for later in the series.</p>
+<h2 id="the-map-and-what-follows">The map and what follows<a class="zola-anchor" href="#the-map-and-what-follows" aria-label="Anchor link for: the-map-and-what-follows" style="visibility: hidden;"></a>
+</h2>
+<p>Post 4 takes a different thread down the pipeline: how one <code>!mx.tensor</code> value becomes two memory buffers, and how the accumulator this op carries turns into an in-place write. Post 5 returns to the <code>floordiv</code> and drives the dialect to running code, where the vectorizer's refusal has to be answered.</p>
+<p>The thesis was that block-scaled matmul reduces to one <code>floordiv</code> in one affine map. It is the whole block structure, it is why the op lowers to a <code>linalg.generic</code>, and it is the reason the clean lowering carries a cost into the next pass. One choice in one map, right for the stage it was built for and pointed straight at the next problem. The map is the design; everything else in the lowering follows it.</p>
+
+      </article>
+
+      
+      
+
+      
+      
+    </div>
+
+    
+
+
+<footer>
+  <div class="left">
+    <div class="copyright">
+      © 2026 &lt;joseph bak&gt;
+      
+      <span>|</span>
+      Built with <a href="https://www.getzola.org" rel="noreferrer" target="_blank">zola</a> and <a href="https://github.com/isunjn/serene" rel="noreferrer" target="_blank">serene</a>
+      
+    </div>
+  </div>
+
+  <div class="right">
+    
+    
+      
+    
+    
+    <a id="rss-btn" href="https://josephbak.github.io/posts/feed.xml">RSS</a>
+    
+    
+
+    
+    
+    
+    <button id="theme-toggle" aria-label="theme switch">
+      <span class="moon-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M10 7C10 10.866 13.134 14 17 14C18.9584 14 20.729 13.1957 21.9995 11.8995C22 11.933 22 11.9665 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C12.0335 2 12.067 2 12.1005 2.00049C10.8043 3.27098 10 5.04157 10 7ZM4 12C4 16.4183 7.58172 20 12 20C15.0583 20 17.7158 18.2839 19.062 15.7621C18.3945 15.9187 17.7035 16 17 16C12.0294 16 8 11.9706 8 7C8 6.29648 8.08133 5.60547 8.2379 4.938C5.71611 6.28423 4 8.9417 4 12Z" fill="currentColor"></path></svg>
+</span>
+      <span class="sun-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M12 18C8.68629 18 6 15.3137 6 12C6 8.68629 8.68629 6 12 6C15.3137 6 18 8.68629 18 12C18 15.3137 15.3137 18 12 18ZM12 16C14.2091 16 16 14.2091 16 12C16 9.79086 14.2091 8 12 8C9.79086 8 8 9.79086 8 12C8 14.2091 9.79086 16 12 16ZM11 1H13V4H11V1ZM11 20H13V23H11V20ZM3.51472 4.92893L4.92893 3.51472L7.05025 5.63604L5.63604 7.05025L3.51472 4.92893ZM16.9497 18.364L18.364 16.9497L20.4853 19.0711L19.0711 20.4853L16.9497 18.364ZM19.0711 3.51472L20.4853 4.92893L18.364 7.05025L16.9497 5.63604L19.0711 3.51472ZM5.63604 16.9497L7.05025 18.364L4.92893 20.4853L3.51472 19.0711L5.63604 16.9497ZM23 11V13H20V11H23ZM4 11V13H1V11H4Z" fill="currentColor"></path></svg>
+</span>
+    </button>
+    
+  </div>
+</footer>
+
+
+
+
+<dialog id="rss-mask">
+  <div>
+    <a href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml">https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml</a>
+    
+    
+    <button autofocus aria-label="copy" data-link="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z" fill="currentColor"></path></svg>
+
+    </button>
+  </div>
+</dialog>
+
+
+
+  </main>
+</div>
+
+  
+<script src="/js/lightense.min.js"></script>
+
+
+  <script src="https://josephbak.github.io/js/main.js"></script>
+</body>
+
+</html>
