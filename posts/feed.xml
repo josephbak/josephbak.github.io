@@ -9,7 +9,7 @@
 	
 	<id>https://josephbak.github.io/posts/feed.xml</id>
 	<entry xml:lang="en">
-		<title>Lowering MX Block-Matmul to linalg.generic with Block-Scale Affine Maps</title>
+		<title>3 - Lowering MX Block-Matmul to linalg.generic with Block-Scale Affine Maps</title>
 		<published>2026-08-24T00:00:00+00:00</published>
 		<updated>2026-08-24T00:00:00+00:00</updated>
 		<link rel="alternate" type="text/html" href="https://josephbak.github.io/posts/lowering-mx-block-matmul/"/>
@@ -114,7 +114,7 @@
 </content>
 	</entry>
 	<entry xml:lang="en">
-		<title>Canonicalization and the E8M0 Power-of-Two Trick</title>
+		<title>2 - Canonicalization and the E8M0 Power-of-Two Trick</title>
 		<published>2026-08-17T00:00:00+00:00</published>
 		<updated>2026-08-17T00:00:00+00:00</updated>
 		<link rel="alternate" type="text/html" href="https://josephbak.github.io/posts/canonicalization-e8m0-power-of-two/"/>
@@ -244,7 +244,7 @@ and fails the whole compilation:&lt;&#x2F;p&gt;
 </content>
 	</entry>
 	<entry xml:lang="en">
-		<title>A Dialect Is a Set of Co-Designed Decisions: Designing for MX Quantization in MLIR</title>
+		<title>1 - A Dialect Is a Set of Co-Designed Decisions: Designing for MX Quantization in MLIR</title>
 		<published>2026-08-12T00:00:00+00:00</published>
 		<updated>2026-08-12T00:00:00+00:00</updated>
 		<link rel="alternate" type="text/html" href="https://josephbak.github.io/posts/designing-mx-dialect/"/>
