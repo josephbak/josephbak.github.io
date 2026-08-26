@@ -46,54 +46,56 @@ With the named ops ruled out, and reconstruction the only way to use one, the lo
 The op going in is a single `mx.block_matmul` with three operands:
 
 ```mlir
-func.func @block_matmul(
-    %lhs: !mx.tensor<32x64xf8E4M3FN, block_size=32, scale_type=f8E8M0FNU>,
-    %rhs: tensor<64x64xf32>,
-    %acc: tensor<32x64xf32>) -> tensor<32x64xf32> {
-  %0 = mx.block_matmul %lhs, %rhs, %acc
-      : !mx.tensor<32x64xf8E4M3FN, block_size=32, scale_type=f8E8M0FNU>,
-        tensor<64x64xf32>, tensor<32x64xf32> -> tensor<32x64xf32>
-  return %0 : tensor<32x64xf32>
+module {
+  func.func @block_matmul(%arg0: !mx.tensor<32x64xf8E4M3FN, block_size = 32, scale_type = f8E8M0FNU>, %arg1: tensor<64x64xf32>, %arg2: tensor<32x64xf32>) -> tensor<32x64xf32> {
+    %0 = mx.block_matmul %arg0, %arg1, %arg2 : <32x64xf8E4M3FN, block_size = 32, scale_type = f8E8M0FNU>, tensor<64x64xf32>, tensor<32x64xf32> -> tensor<32x64xf32>
+    return %0 : tensor<32x64xf32>
+  }
 }
 ```
 
-The block-scaled operand `%lhs` is one `!mx.tensor` value. The mantissa and its block scale are both inside that type; nothing about the split is visible yet. B and the accumulator are ordinary `f32` tensors. [Post 1](@/posts/designing-mx-dialect.md) covers how the type carries the block metadata.
+The block-scaled operand `%arg0` is one `!mx.tensor` value. The mantissa and its block scale are both inside that type; nothing about the split is visible yet. `%arg1` (`B`) and `%arg2` (the accumulator) are ordinary `f32` tensors. [Post 1](@/posts/designing-mx-dialect.md) covers how the type carries the block metadata.
 
-Here is what `mx.block_matmul` lowers to, the part that matters:
-
-```mlir
-#mant  = affine_map<(d0, d1, d2) -> (d0, d2)>
-#scale = affine_map<(d0, d1, d2) -> (d0, d2 floordiv 32)>
-#B     = affine_map<(d0, d1, d2) -> (d2, d1)>
-#acc   = affine_map<(d0, d1, d2) -> (d0, d1)>
-
-linalg.generic {
-  indexing_maps = [#mant, #scale, #B, #acc],
-  iterator_types = ["parallel", "parallel", "reduction"]
-} ins(%mantissa, %scale, %B
-      : tensor<32x64xf8E4M3FN>, tensor<32x2xf8E8M0FNU>, tensor<64x64xf32>)
-  outs(%acc : tensor<32x64xf32>)
-```
-
-The iteration space is `(d0, d1, d2)`, which is `(m, n, k)`: rows of the output, columns of the output, and the contraction axis. Three of the four maps are the ordinary matmul projections. The mantissa reads `(m, k)`. B reads `(k, n)`. The accumulator reads `(m, n)`. Nothing surprising: each is a bare pair of iteration dimensions, passed straight through.
-
-The scale map is the one that isn't ordinary:
+Here is what `mx.block_matmul` lowers to:
 
 ```mlir
-affine_map<(d0, d1, d2) -> (d0, d2 floordiv 32)>
+#map = affine_map<(d0, d1, d2) -> (d0, d2)>
+#map1 = affine_map<(d0, d1, d2) -> (d0, d2 floordiv 32)>
+#map2 = affine_map<(d0, d1, d2) -> (d2, d1)>
+#map3 = affine_map<(d0, d1, d2) -> (d0, d1)>
+module {
+  func.func @block_matmul(%arg0: tensor<32x64xf8E4M3FN>, %arg1: tensor<32x2xf8E8M0FNU>, %arg2: tensor<64x64xf32>, %arg3: tensor<32x64xf32>) -> tensor<32x64xf32> {
+    %0 = linalg.generic {indexing_maps = [#map, #map1, #map2, #map3], iterator_types = ["parallel", "parallel", "reduction"]} ins(%arg0, %arg1, %arg2 : tensor<32x64xf8E4M3FN>, tensor<32x2xf8E8M0FNU>, tensor<64x64xf32>) outs(%arg3 : tensor<32x64xf32>) {
+    ^bb0(%in: f8E4M3FN, %in_0: f8E8M0FNU, %in_1: f32, %out: f32):
+      %1 = arith.extf %in : f8E4M3FN to f32
+      %2 = arith.extf %in_0 : f8E8M0FNU to f32
+      %3 = arith.mulf %1, %2 : f32
+      %4 = arith.mulf %3, %in_1 : f32
+      %5 = arith.addf %out, %4 : f32
+      linalg.yield %5 : f32
+    } -> tensor<32x64xf32>
+    return %0 : tensor<32x64xf32>
+  }
+}
 ```
 
-As the contraction sweeps `k` from 0 to 63, the mantissa is read at every `k`, but the scale is read at `k floordiv 32`. For `k` in 0 through 31 that index is 0; at `k = 32` it becomes 1. One scale element is shared across a whole block of 32 mantissa elements, which is exactly what a block-scaled format means. The 32×2 shape of the scale operand is the same fact seen from the other side: 64 contraction positions divided into blocks of 32 gives 2 scale columns, one per block, `K / block_size`.
+Set the payload region aside for the next section and look at the four indexing maps. The iteration space is `(d0, d1, d2)`, which is `(m, n, k)`: rows of the output, columns of the output, and the contraction axis. Three of the four maps are the ordinary matmul projections. `#map`, the mantissa, reads `(m, k)`. `#map2`, `B`, reads `(k, n)`. `#map3`, the accumulator, reads `(m, n)`. Each is a bare pair of iteration dimensions, passed straight through.
 
-That single `floordiv` is the entire block-scaled semantics. Strip it out and this is a plain matmul; put it in and the scale operand is addressed at block resolution while everything else stays at element resolution. The asymmetry that `linalg.matmul` could not express is one arithmetic expression in one of four maps.
+`#map1`, the scale, is the one that isn't ordinary:
 
-It matters that the floordiv transforms a single dimension. A block-scaled access is a coarsening of an existing axis, not a fusion of two axes into one. Contrast the quantize op in this same dialect, whose per-block reduction wants to address a block index and a within-block index at once. Written naively its map would read `(i, b, k) -> (i, b * 32 + k)`, folding two iteration dimensions into a single tensor coordinate. That map is rejected: `b` and `k` cannot be recovered separately from `b * 32 + k`, so the op is ill-formed and quantize has to reshape its input with `tensor.expand_shape` first. The matmul needs no such reshape. `k floordiv 32` reads one coordinate off one dimension. It never fuses, so there is nothing to recover and nothing to reshape around.
+```mlir
+#map1 = affine_map<(d0, d1, d2) -> (d0, d2 floordiv 32)>
+```
 
-That distinction, transforming one dimension versus fusing two, is the line between a map `linalg.generic` accepts and one it rejects. The next section is about the payload the maps feed. The section after that is about why the generic accepts this floordiv at all, and where that acceptance runs out.
+As the contraction sweeps `k` from 0 to 63, the mantissa is read at every `k`, but the scale is read at `k floordiv 32`. For `k` in 0 through 31 that index is 0; at `k = 32` it becomes 1. One scale element is shared across a whole block of 32 mantissa elements, which is exactly what a block-scaled format means. The `32×2` shape of the scale operand is the same fact seen from the other side: 64 contraction positions divided into blocks of 32 gives 2 scale columns, one per block, `K / block_size`.
 
-## The payload reconstructs A one element at a time
+That single `floordiv` is the entire block-scaled semantics. Strip it out and this is a plain matmul; put it in and the scale operand is addressed at block resolution while everything else stays at element resolution. That asymmetry, the thing `linalg.matmul` could not express, is one arithmetic expression in one of four maps.
 
-The maps decide which elements each iteration sees. The payload decides what to do with them. Here is the region, straight from the lowered op:
+The maps say which element each iteration reads. The next section is what the iteration does with them.
+
+## The payload reconstructs `A` one element at a time
+
+Return to the `^bb0` region of that lowered op, on its own (the comments are added here; `mx-opt` prints the region without them):
 
 ```mlir
 ^bb0(%in: f8E4M3FN, %in_0: f8E8M0FNU, %in_1: f32, %out: f32):
@@ -105,13 +107,13 @@ The maps decide which elements each iteration sees. The payload decides what to 
   linalg.yield %5 : f32
 ```
 
-Four block arguments, one per operand, in the order the maps were listed: the mantissa scalar, the scale scalar, the B scalar, and the running accumulator. Each is a single value, already selected by that operand's indexing map for this `(m, n, k)`. The payload never sees a tensor. It sees four numbers and produces one.
+Four block arguments, one per operand, in the order the maps were listed: the mantissa scalar, the scale scalar, the `B` scalar, and the running accumulator. Each is a single value, already selected by that operand's indexing map for this `(m, n, k)`. The payload never sees a tensor. It sees four numbers and produces one.
 
-The work is a fused dequantize-then-multiply-accumulate. Widen the mantissa to `f32`, widen the scale to `f32`, multiply them to reconstruct A's true value at this position, multiply that by B, add to the accumulator. The reconstruction `mantissa * scale` and the contraction `* B` happen in the same region, on the same scalar, in registers. A's full-precision value exists for the duration of one multiply-accumulate and is gone.
+The work is a fused dequantize-then-multiply-accumulate. Widen the mantissa to `f32`, widen the scale to `f32`, multiply them to reconstruct `A`'s true value at this position, multiply that by `B`, add to the accumulator. The reconstruction `mantissa * scale` and the contraction `* B` happen in the same region, on the same scalar, in registers. `A`'s full-precision value exists for the duration of one multiply-accumulate and is gone.
 
-That is the point of lowering to a fused generic rather than a dequantize op followed by a matmul. Dequantize-then-matmul would compute every `A_real`, write all of them into a dense 32×64 `f32` tensor, and then read that tensor back in the matmul. The fused form computes each `A_real` exactly where it is consumed and never writes it anywhere. The reconstructed A is never a value in the program: `%3` is a scalar in a register, produced and consumed inside one loop iteration, not a tensor-typed result that has to live in memory. No 32×64 `f32` intermediate, no extra pass over memory to produce it and consume it. That is the memory-traffic argument the whole dialect rests on, made concrete in five arithmetic ops.
+That is the point of lowering to a fused generic rather than a dequantize op followed by a matmul. Dequantize-then-matmul would compute every `A_real`, write all of them into a dense `32×64` `f32` tensor, and then read that tensor back in the matmul. The fused form computes each `A_real` exactly where it is consumed and never writes it anywhere. The reconstructed `A` is never a value in the program: `%3` is a scalar in a register, produced and consumed inside one loop iteration, not a tensor-typed result that has to live in memory. There is no `32×64` `f32` intermediate to write and reread. Keeping `A` in its one-byte form instead of expanding it to a four-byte reconstruction is the memory-traffic win the dialect exists for.
 
-The grouping is deliberate. Floating-point multiply is not associative: each product rounds to the nearest representable value, and regrouping changes which intermediate gets rounded. The payload computes `(mantissa * scale) * B`, not `(mantissa * B) * scale`. Because the E8M0 scale is a power of two, `mantissa * scale` is exact whenever the result stays in the format's normal range: multiplying by a power of two only shifts the exponent and leaves the mantissa bits untouched, so nothing rounds. (At the extremes, a product that overflows to infinity or underflows into the subnormal range can still lose precision; the v1 lowering assumes in-range blocks.) Reconstructing A's true value first and doing the one lossy multiply against B last is both numerically honest and faithful to what the op means: dequantize A, then contract. The other grouping would round a meaningless `mantissa * B` intermediate and then scale the rounding error.
+The grouping is deliberate. Floating-point multiply is not associative: each product rounds to the nearest representable value, and regrouping changes which intermediate gets rounded. The payload computes `(mantissa * scale) * B`, not `(mantissa * B) * scale`. Because the E8M0 scale is a power of two, `mantissa * scale` is exact whenever the result stays in the format's normal range: multiplying by a power of two only shifts the exponent and leaves the mantissa bits untouched, so nothing rounds. (At the extremes, a product that overflows to infinity or underflows into the subnormal range can still lose precision; the v1 lowering assumes in-range blocks.) Reconstructing `A`'s true value first and doing the one lossy multiply against `B` last is faithful to what the op means: dequantize `A`, then contract. The other grouping would round a meaningless `mantissa * B` intermediate and then scale the rounding error.
 
 One thing the IR does not do: exploit that the scale is a power of two. At the IR level `arith.mulf %1, %2` is a general `f32` multiply, and nothing records that `%2` is constrained to powers of two. A backend emits an ordinary floating-point multiply, not the exponent-add the power-of-two case would in principle allow. The exactness is a property to reason about for correctness, not an optimization the v1 lowering expresses.
 
