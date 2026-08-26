@@ -1,5 +1,5 @@
 +++
-title = "Canonicalization and the E8M0 Power-of-Two Trick"
+title = "2 - Canonicalization and the E8M0 Power-of-Two Trick"
 description = "MX block scales are powers of two, which would make scale-folding an exact exponent-field add. Here's why v1 sets that trick up and never uses it."
 slug = "canonicalization-e8m0-power-of-two"
 date = 2026-08-17

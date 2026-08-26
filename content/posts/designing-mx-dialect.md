@@ -1,5 +1,5 @@
 +++
-title = "A Dialect Is a Set of Co-Designed Decisions: Designing for MX Quantization in MLIR"
+title = "1 - A Dialect Is a Set of Co-Designed Decisions: Designing for MX Quantization in MLIR"
 description = "Designing an out-of-tree MLIR dialect for OCP Microscaling quantization: one parameterized type, four ops, and the decisions that constrain each other across passes."
 slug = "designing-mx-dialect"
 date = 2026-08-12
