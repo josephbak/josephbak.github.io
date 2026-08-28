@@ -115,3 +115,26 @@ A custom layout cannot buy this back. `memref` does support custom layouts, but 
 
 Packing does not give one clean buffer. It gives a byte array the type system can no longer reason about, with the split we tried to avoid reappearing by hand at every reader. The split into two typed memrefs keeps both buffers self-describing: each carries its own element type and shape, each bufferizes as an ordinary dense memref, and every pass downstream still sees two real tensors instead of an opaque blob.
 
+## Teaching an old pass about new ops
+
+One-shot-bufferize is upstream code, and it was written before this dialect existed. Yet it bufferizes the ops that the `--mx-to-linalg` lowering produced, ops that did not exist when it was compiled. A pass that predates these ops still knows how to bufferize them, and how it manages that is this section.
+
+There are two ways a pass can know how to transform an op, and they differ in where the knowledge lives.
+
+The first is a pattern, which is how the `--mx-to-linalg` lowering works. The pass carries the knowledge: a pattern per op it handles, an enumerated set of ops it knows, and nothing outside that set gets touched. That works because the lowering deals with a closed set, four mx ops, all known when the pass was written. The pass can hold the whole list.
+
+Bufferization cannot work that way, because its op set is open. One-shot-bufferize has to bufferize ops that did not exist when it was compiled, including out-of-tree ops like the ones this dialect lowers to. It cannot carry a pattern for every op that will ever need bufferizing. So the knowledge cannot live in the pass; it has to live on the op.
+
+That is the second mechanism: an interface. `BufferizableOpInterface` is a contract an op implements, saying "here is how to bufferize me." The pass calls `op.bufferize()` without knowing the concrete op type, and each op supplies its own logic, so the pass handles ops it has never seen. The deciding axis between the two mechanisms is not whether the transformation is a lowering. Both `--mx-to-linalg` and bufferization are lowerings. The axis is whether the consumer's op set is closed, which allows a pattern, or open, which forces an interface.
+
+This is the [expression problem](https://en.wikipedia.org/wiki/Expression_problem): letting new ops and new behaviors be added independently, without editing either side. A new op can become bufferizable without the bufferization pass changing, and the pass can gain a new op without that op's dialect changing. The interface plus an external model is MLIR's answer to it.
+
+An external model implements an interface for a dialect's ops, but lives outside that dialect rather than inside it. The bufferization logic for `linalg` ops could have gone inside the `linalg` dialect, but that would make `linalg` depend on the bufferization infrastructure, and a dialect should not drag in a transformation framework just to define its ops. So the implementation lives outside the op-owning dialect, which keeps `linalg` free of any bufferization dependency at the cost of one step: something has to attach the model before the pass runs.
+
+Upstream implements `BufferizableOpInterface` for its own ops, `linalg`, `arith`, `tensor`, `func`, the ones the lowering produces. Those implementations exist; attaching them to the dialect's context does not happen automatically. The models are upstream; the registration that attaches them is not. Until it runs, nothing bufferizes, and the pass says so precisely: an unattached model makes one-shot-bufferize fail with an interface "promised but not implemented" error that names the dialect whose op it could not bufferize.
+
+Four registrations, one per dialect: `arith`, `linalg`, `tensor`, `func`. The count tracks upstream dialects in the lowered IR, not mx ops, of which there are none left by the time bufferization runs. Add an op from a fifth dialect and there would be a fifth registration.
+
+Three of the four are filed under their own dialect's `Transforms` directory. `func` is not: its model lives under the bufferization dialect, in the `func_ext` namespace. Bufferizing a function boundary is a calling-convention decision about how tensors cross a signature, which is bufferization policy, not a fact about what `func.func` is, so the model is filed with the pass that needs it rather than the dialect it operates on. Looking for it under the func dialect turns up nothing; the model is filed by what consumes it.
+
+The promise mechanism is what makes the missing registrations tractable. Each unattached model produces one precise error naming one dialect, so the registrations surface one at a time with an exact pointer, rather than as a single opaque failure to untangle.
