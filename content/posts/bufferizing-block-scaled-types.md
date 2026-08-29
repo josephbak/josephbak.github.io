@@ -30,38 +30,38 @@ tags = ["mlir", "compilers", "quantization", "bufferization"]
 
 ## A tensor is a value, a buffer is a place
 
-Post 3 lowered `mx.block_matmul` to a single `linalg.generic` on tensors. By the end of it, the block-scaled operand was no longer one value: the lowering consumed a `!mx.tensor` and threaded through two tensors in its place, a mantissa tensor and a scale tensor, each with its own element type and its own shape. The affine maps read from both, the fused payload multiplied them back together per element, and the whole thing verified.
+[Post 3](@/posts/lowering-mx-block-matmul.md) lowered `mx.block_matmul` to a single `linalg.generic` on tensors. By the end of it, the block-scaled operand was no longer one value: the lowering consumed a `!mx.tensor` and threaded through two tensors in its place, a mantissa tensor and a scale tensor, each with its own element type and its own shape.
 
-That post stopped at a deliberate line: one `!mx.tensor` value had become two tensors, and the question of how one value becomes two buffers was left for here.
+Post 3 stopped at tensors: one `!mx.tensor` value had become two tensors, and how those become two buffers was left for here.
 
-The gap between those two is where the work is. A tensor is a value. It has no memory location, no allocation, no aliasing. Somewhere between the linalg form Post 3 produced and a program that runs, every tensor has to become a `memref` (memory reference): a concrete buffer with an address. For an ordinary tensor that step is close to mechanical. For a block-scaled type it is the whole story of this post, because a block-scaled type does not have a single buffer it can bufferize into, and the reason it doesn't is baked into what the type is.
+The gap between those two is where the work is. A tensor is a value. It has no memory location, no allocation, no aliasing. Somewhere between the linalg form Post 3 produced and a program that runs, every tensor has to become a `memref` (memory reference): a concrete buffer with an address. For an ordinary tensor that step is close to mechanical. For a block-scaled type it is the problem this post is about, because a block-scaled type does not have a single buffer it can bufferize into, and the reason it doesn't is baked into what the type is.
 
-So this post is about one transition and its consequence. The transition: a value-semantic block-scaled type has no 1:1 image in memory, so it splits into two buffers rather than one. The consequence, once the split is in place: the matmul's accumulator can be written in place, with no defensive copy, which is what keeps the memory-traffic benchmark honest. The split is the spine. The copy-free accumulation is what the spine pays for.
+This post is about one transition and one payoff. The transition: a value-semantic block-scaled type has no 1:1 image in memory, so it splits into two buffers rather than one. The payoff, once the split is done and the ops reach bufferization as ordinary tensors: the matmul's accumulator bufferizes in place, with no defensive copy, which is what keeps the memory-traffic benchmark honest. The split is the spine. The copy-free accumulation is what it sets up.
 
-The split and the bufferization are not the same step, and conflating them is the fastest way to lose the thread. The two-tensor form already existed at the end of [Post 3](@/posts/lowering-mx-block-matmul.md), on tensors, before any buffer was allocated. Bufferization takes that pair the rest of the way to memory. Counting and memory are separate axes, and this post treats them separately.
+The split and the bufferization are not the same step, and it is worth keeping them apart. The two-tensor form already existed at the end of Post 3, on tensors, before any buffer was allocated. Bufferization takes that pair the rest of the way to memory. Counting and memory are separate axes.
 
 ## Why a block-scaled type has no single buffer
 
-Bufferization gives every tensor a `memref`: a concrete buffer at a concrete address. For an ordinary `tensor<32x64xf32>` the mapping is direct. One tensor, one buffer, 32 by 64 four-byte floats laid out in memory. The element type fixes the byte width, the shape fixes the extent, and the buffer is those two facts made physical.
+For an ordinary `tensor<32x64xf32>`, bufferization is direct. One tensor, one buffer, 32 by 64 four-byte floats laid out in memory. The element type fixes the byte width, the shape fixes the extent, and the buffer is those two facts made physical.
 
-A block-scaled value has no such buffer. `A`'s mantissa is `f8E4M3FN`, one byte per element, at full `32×64` resolution. Its scale is `f8E8M0FNU`, also one byte, but at `32×2`: one value per 32-element block along the contraction axis. [Post 3](@/posts/lowering-mx-block-matmul.md) established that shape arithmetic. What matters here is that the two components disagree on both axes that define a buffer: different element types, `f8E4M3FN` against `f8E8M0FNU`, and different shapes, `32×64` against `32×2`. No single element type and no single extent describes both, so no single `memref` holds both.
+A block-scaled value has no such buffer. `A`'s mantissa is `f8E4M3FN`, one byte per element, at full `32×64` resolution. Its scale is `f8E8M0FNU`, also one byte, but at `32×2`: one value per 32-element block along the contraction axis ([Post 3](@/posts/lowering-mx-block-matmul.md) established that shape arithmetic). The two disagree on both axes that define a buffer, element type and shape, so no single element type and no single extent describes both. There is no one `memref` that holds both.
 
-Consider what a single buffer would have to be. It would need one element type, but the mantissa and scale are different types. It would need one shape, but they are different shapes. The only way to force them into one buffer is to abandon the type that describes each and drop to raw bytes: a flat `i8` buffer with the mantissa and scale interleaved by hand, and offset arithmetic in every access to say which bytes are mantissa and which are scale for a given block. That is not a `memref` of a meaningful type any more. It is a byte array with a layout convention living outside the type system, and every op that touches it has to know the convention.
+The only way to force them into one is to abandon the types that describe each and drop to raw bytes: a flat `i8` buffer with mantissa and scale interleaved by hand, and offset arithmetic at every access to say which bytes are which for a given block. That is not a `memref` of a meaningful type any more. It is a byte array with a layout convention living outside the type system, and every op that touches it has to know the convention.
 
-The multi-buffer choice was locked before any of this lowering was written, for exactly this reason. A block-scaled type is two things with different types and different shapes wearing one type name, and memory has no slot for "two things wearing one name." Bufferization has to make that plurality explicit: the type presents as one value, and in memory it becomes two buffers.
+The multi-buffer choice was locked before any of this lowering was written, for exactly this reason. A block-scaled type is two components wearing one type name, and memory has no slot for "two things wearing one name." Bufferization has to make that plurality explicit: the type presents as one value, and in memory it becomes two buffers.
 
 ## Split at lowering, bufferize later
 
-The path from one `!mx.tensor` to two buffers is two separate transitions. The first changes how many values there are. The second changes what those values are. They happen in different passes, mine and upstream's, and they move along different axes.
+The path from one `!mx.tensor` to two buffers is two separate transitions. The first changes how many values there are. The second changes what those values are. They happen in different passes, one in the `mx-to-linalg` lowering and one upstream, and they move along different axes.
 
 | stage | `!mx.tensor` | tensor pair | memref pair |
 |---|---|---|---|
 | count | 1 value | 2 values | 2 buffers |
 | semantics | value | value | memory |
-| produced by | — | my `TypeConverter` (at lowering) | upstream one-shot-bufferize |
+| produced by | — | my `TypeConverter` (at lowering) | `one-shot-bufferize` |
 | transition | — | count: 1 → 2 | semantics: value → memory |
 
-The split is the first transition, and it already happened in [Post 3](@/posts/lowering-mx-block-matmul.md). It is not part of bufferization at all. When `mx.block_matmul` lowered to `linalg.generic`, the `TypeConverter` registered for the pass rewrote the one `!mx.tensor` operand into two tensor operands, a mantissa tensor and a scale tensor. That is a 1:N type conversion: one source type maps to N replacement types, here N = 2. It runs at lowering, on tensors, and it changes only the count. Both replacements are still value-semantic tensors with no memory attached.
+The split is the first transition, and it already happened in Post 3. It is not part of bufferization at all. When `mx.block_matmul` lowered to `linalg.generic`, the `TypeConverter` registered for the pass rewrote the one `!mx.tensor` operand into two tensor operands, a mantissa tensor and a scale tensor. That is a 1:N type conversion: one source type maps to N replacement types, here N = 2. It runs at lowering, on tensors, and it changes only the count. Both replacements are still value-semantic tensors with no memory attached.
 
 The visible proof is the function signature. Going in, one block-scaled argument:
 
@@ -69,7 +69,7 @@ The visible proof is the function signature. Going in, one block-scaled argument
 func.func @block_matmul(%arg0: !mx.tensor<32x64xf8E4M3FN, block_size = 32, scale_type = f8E8M0FNU>, %arg1: tensor<64x64xf32>, %arg2: tensor<32x64xf32>) -> tensor<32x64xf32>
 ```
 
-Coming out of `--mx-to-linalg`, that one argument is two:
+Coming out of `mx-to-linalg`, that one argument is two:
 
 ```mlir
 func.func @block_matmul(%arg0: tensor<32x64xf8E4M3FN>, %arg1: tensor<32x2xf8E8M0FNU>, %arg2: tensor<64x64xf32>, %arg3: tensor<32x64xf32>) -> tensor<32x64xf32>
@@ -77,26 +77,15 @@ func.func @block_matmul(%arg0: tensor<32x64xf8E4M3FN>, %arg1: tensor<32x2xf8E8M0
 
 `%arg0` became `%arg0` (mantissa) and `%arg1` (scale). `B` and the accumulator shifted down to `%arg2` and `%arg3`. The arity went from three arguments to four, and the extra one is the split made concrete: the block-scaled type is gone and its two components stand on their own. Everything is still a `tensor`. No buffer exists yet.
 
-The second transition is bufferization proper, and it is upstream's job. One-shot-bufferize takes the tensor pair and gives each tensor a `memref`, turning value semantics into memory semantics. It does not change the count: two tensors become two buffers, with `B` and the accumulator becoming buffers alongside them. The mantissa and scale are already separate by the time it runs, so bufferization never sees a block-scaled type and never reasons about the split. It bufferizes four dense, standard tensors, each the way any tensor bufferizes.
+The second transition is bufferization proper, and it is upstream's job. The `one-shot-bufferize` pass takes the tensor pair and gives each tensor a `memref`, turning value semantics into memory semantics. It does not change the count: two tensors become two buffers, with `B` and the accumulator becoming buffers alongside them. The mantissa and scale are already separate by the time it runs, so bufferization never sees a block-scaled type and never reasons about the split. It bufferizes four dense, standard tensors, each the way any tensor bufferizes.
 
-That ordering is the point. The split is done early, in the `--mx-to-linalg` lowering, so by the time bufferization runs there is nothing block-scaled left to handle. Why the accumulator in particular bufferizes without a defensive copy is where the post goes next.
+That ordering is the point. The split is done early, in the `mx-to-linalg` lowering, so by the time bufferization runs there is nothing block-scaled left to handle. Why the accumulator in particular bufferizes without a defensive copy is where the post goes next.
 
 ## Why split and not pack
 
 The split is one design choice out of two. The other was to keep a single buffer and pack both components into it.
 
 Packing is physically possible. The mantissa is `32×64` one-byte elements and the scale is `32×2` one-byte elements, so both are just bytes, and bytes fit end to end in one flat buffer:
-
-```
-memref<2112xi8>
-
-byte 0                              2047 2048        2111
-  |                                    |   |            |
-  +------------------------------------+   +------------+
-  |          mantissa bytes            |   | scale bytes|
-  |          32 x 64 = 2048            |   | 32 x 2 = 64|
-  +------------------------------------+   +------------+
-```
 
 ```
 memref<2112xi8>   (one flat buffer, 2112 bytes)
@@ -117,24 +106,73 @@ Packing does not give one clean buffer. It gives a byte array the type system ca
 
 ## Teaching an old pass about new ops
 
-One-shot-bufferize is upstream code, and it was written before this dialect existed. Yet it bufferizes the ops that the `--mx-to-linalg` lowering produced, ops that did not exist when it was compiled. A pass that predates these ops still knows how to bufferize them, and how it manages that is this section.
+The `one-shot-bufferize` pass is upstream code, and it was written before this dialect existed. Yet it bufferizes the ops that the `mx-to-linalg` lowering produced, ops that did not exist when it was compiled. A pass that predates these ops still knows how to bufferize them, and how it manages that is this section.
 
 There are two ways a pass can know how to transform an op, and they differ in where the knowledge lives.
 
-The first is a pattern, which is how the `--mx-to-linalg` lowering works. The pass carries the knowledge: a pattern per op it handles, an enumerated set of ops it knows, and nothing outside that set gets touched. That works because the lowering deals with a closed set, four mx ops, all known when the pass was written. The pass can hold the whole list.
+The first is a pattern, which is how the `mx-to-linalg` lowering works. The pass carries the knowledge: a pattern per op it handles, an enumerated set of ops it knows, and nothing outside that set gets touched. That works because the lowering deals with a closed set, four mx ops, all known when the pass was written. The pass can hold the whole list.
 
-Bufferization cannot work that way, because its op set is open. One-shot-bufferize has to bufferize ops that did not exist when it was compiled, including out-of-tree ops like the ones this dialect lowers to. It cannot carry a pattern for every op that will ever need bufferizing. So the knowledge cannot live in the pass; it has to live on the op.
+Bufferization cannot work that way, because its op set is open. It has to bufferize ops that did not exist when it was compiled, including out-of-tree ops like the ones this dialect lowers to. It cannot carry a pattern for every op that will ever need bufferizing. So the knowledge cannot live in the pass; it has to live on the op.
 
-That is the second mechanism: an interface. `BufferizableOpInterface` is a contract an op implements, saying "here is how to bufferize me." The pass calls `op.bufferize()` without knowing the concrete op type, and each op supplies its own logic, so the pass handles ops it has never seen. The deciding axis between the two mechanisms is not whether the transformation is a lowering. Both `--mx-to-linalg` and bufferization are lowerings. The axis is whether the consumer's op set is closed, which allows a pattern, or open, which forces an interface.
+That is the second mechanism: an interface. `BufferizableOpInterface` is a contract an op implements, saying "here is how to bufferize me." The pass calls `op.bufferize()` without knowing the concrete op type, and each op supplies its own logic, so the pass handles ops it has never seen. The deciding axis between the two mechanisms is not whether the transformation is a lowering. Both `mx-to-linalg` and bufferization are lowerings. The axis is whether the consumer's op set is closed, which allows a pattern, or open, which forces an interface.
 
 This is the [expression problem](https://en.wikipedia.org/wiki/Expression_problem): letting new ops and new behaviors be added independently, without editing either side. A new op can become bufferizable without the bufferization pass changing, and the pass can gain a new op without that op's dialect changing. The interface plus an external model is MLIR's answer to it.
 
 An external model implements an interface for a dialect's ops, but lives outside that dialect rather than inside it. The bufferization logic for `linalg` ops could have gone inside the `linalg` dialect, but that would make `linalg` depend on the bufferization infrastructure, and a dialect should not drag in a transformation framework just to define its ops. So the implementation lives outside the op-owning dialect, which keeps `linalg` free of any bufferization dependency at the cost of one step: something has to attach the model before the pass runs.
 
-Upstream implements `BufferizableOpInterface` for its own ops, `linalg`, `arith`, `tensor`, `func`, the ones the lowering produces. Those implementations exist; attaching them to the dialect's context does not happen automatically. The models are upstream; the registration that attaches them is not. Until it runs, nothing bufferizes, and the pass says so precisely: an unattached model makes one-shot-bufferize fail with an interface "promised but not implemented" error that names the dialect whose op it could not bufferize.
+Upstream implements `BufferizableOpInterface` for its own ops, `linalg`, `arith`, `tensor`, `func`, the ones the lowering produces. Those implementations exist; attaching them to the dialect's context does not happen automatically. The models are upstream; the registration that attaches them is not. Until it runs, nothing bufferizes, and the pass says so precisely: an unattached model makes `one-shot-bufferize` fail with an interface "promised but not implemented" error that names the dialect whose op it could not bufferize.
 
 Four registrations, one per dialect: `arith`, `linalg`, `tensor`, `func`. The count tracks upstream dialects in the lowered IR, not mx ops, of which there are none left by the time bufferization runs. Add an op from a fifth dialect and there would be a fifth registration.
 
 Three of the four are filed under their own dialect's `Transforms` directory. `func` is not: its model lives under the bufferization dialect, in the `func_ext` namespace. Bufferizing a function boundary is a calling-convention decision about how tensors cross a signature, which is bufferization policy, not a fact about what `func.func` is, so the model is filed with the pass that needs it rather than the dialect it operates on. Looking for it under the func dialect turns up nothing; the model is filed by what consumes it.
 
 The promise mechanism is what makes the missing registrations tractable. Each unattached model produces one precise error naming one dialect, so the registrations surface one at a time with an exact pointer, rather than as a single opaque failure to untangle.
+
+## Getting the accumulation copy-free
+
+The split is done and everything is in memory. What remains is one question about the accumulator, and it is where the memory-traffic thesis is either kept or quietly broken.
+
+`mx.block_matmul` accumulates: its result is `acc + A·B`, and the `acc` operand is the running sum. When it bufferizes, `acc` becomes a buffer and the result becomes a buffer too. The safe, dumb thing for a bufferizer to do is allocate a fresh buffer for the result, copy `acc` into it, and accumulate there, leaving the original `acc` untouched. That defensive copy is a full pass over the accumulator, and for a matmul whose whole purpose is to move as few bytes as possible, an unasked-for copy of the output on every call is exactly the cost the dialect exists to avoid.
+
+The copy is unnecessary here, and the bufferizer proves it. Running the `mx-to-linalg` lowering and `one-shot-bufferize` with `bufferize-function-boundaries=1` gives (verbatim, comments added):
+
+```mlir
+func.func @block_matmul(
+    %arg0: memref<32x64xf8E4M3FN, strided<[?, ?], offset: ?>>,   // mantissa
+    %arg1: memref<32x2xf8E8M0FNU, strided<[?, ?], offset: ?>>,   // scale
+    %arg2: memref<64x64xf32, strided<[?, ?], offset: ?>>,        // B
+    %arg3: memref<32x64xf32, strided<[?, ?], offset: ?>>)        // acc
+    -> memref<32x64xf32, strided<[?, ?], offset: ?>> {
+  linalg.generic {...}
+    ins(%arg0, %arg1, %arg2 : ...)
+    outs(%arg3 : memref<32x64xf32, strided<[?, ?], offset: ?>>) {   // accumulates into acc
+    ^bb0(%in: f8E4M3FN, %in_0: f8E8M0FNU, %in_1: f32, %out: f32):
+      ...
+      %4 = arith.addf %out, %3 : f32
+      linalg.yield %4 : f32
+  }
+  return %arg3 : memref<32x64xf32, strided<[?, ?], offset: ?>>   // returns the same buffer
+}
+```
+
+The accumulator arrives as `%arg3`, the `linalg.generic` writes into it directly through `outs`, and the function returns that same `%arg3`. No fresh allocation, no copy. The bytes written are the essential ones, the accumulator's own. The bufferization test for this op asserts exactly that, checking with `CHECK-NOT` that no `memref.copy` survives.
+
+Two things had to hold for that. The first is that the op names its destination. `acc` is the `outs` operand of the generic, so the bufferizer has a concrete buffer to write into rather than an anonymous result it must find storage for. That destination-passing shape is the reason the accumulator is a real operand and not a fresh output, and it is settled in [Post 1](@/posts/designing-mx-dialect.md); here it is what makes the copy-free result reachable at all.
+
+The second is the analysis that decides the copy can be skipped. The bufferizer asks, for each buffer it wants to write in place: is there any read of this buffer's original value that happens after the write? If there is, the write would clobber a value something still needs, so a defensive copy goes in. If there is not, the write is safe and the copy is skipped. For the accumulator, the only read of its value is the accumulate itself, `acc + A·B`, and that read is part of the same operation as the write, not a later use of the original. No later reader means no conflict, so the copy is skipped.
+
+That distinction is the whole mechanism, and it is easy to state slightly wrong. It is not that the accumulator is never read: it is read, once, inside the accumulation. It is that nothing reads the *original* accumulator *after* the write lands. The read that exists and the read that would cause a conflict are different reads, one during the operation and one that would have to come after it, and only the second forces a copy. There is no second read here.
+
+One flag makes the difference between the copy-free form above and a version with a copy: `bufferize-function-boundaries=1`. Without it, the bufferizer handles the body but leaves the function signature tensor-typed, and it cannot see whether a caller will read the original `acc` after the call. Blind past the boundary, it assumes the worst and inserts the defensive copy. With the flag, the signature itself becomes memref-typed under a defined calling convention, and the question the intraprocedural analysis could not answer, whether a later reader exists, is answered by the convention: the caller is responsible for preserving anything it still needs, so this function is free to write `acc` in place. The `?` marks on the arguments, `strided<[?, ?], offset: ?>`, are that convention in the signature: the strides and offset are left dynamic so the boundary accepts a buffer with any layout the caller brings.
+
+The flag is experimental upstream. Its analysis is intraprocedural and leans on the boundary convention. For a single-function benchmark it holds; a multi-function call graph, where callers and callees have to agree on who copies what, is where its edges would need testing. That is the honest boundary of the v1 result.
+
+The reason any of this matters beyond tidiness is the measurement. The benchmark counts bytes moved, and a stray per-call `memref.copy` of a `32×64` `f32` accumulator is 8 KB of traffic the workload never asked for, on every matmul. One unnecessary copy would not make the result wrong; it would make the number misreport what the design actually moves. The copy-free form is what keeps the number the design's number.
+
+## What the split bought
+
+The whole post turned on one move: a block-scaled type has no single buffer, so it becomes two. That split is not a bufferization trick. It happens at lowering, on tensors, and by the time bufferization runs there is nothing block-scaled left, only four ordinary tensors that bufferize the way any tensor does. Splitting early is what let the hard part of bufferization be no part at all.
+
+The split also paid for the accumulator. Because `acc` crosses the boundary as its own operand and nothing reads its original value after the write, the bufferizer writes it in place, and the matmul returns the buffer it accumulated into with no defensive copy. That is what keeps the benchmark honest: the bytes it counts are the bytes the design moves, not bytes an unnecessary copy added.
+
+The `floordiv` in the scale map came through untouched. That expression, the one that made the lowering clean in [Post 3](@/posts/lowering-mx-block-matmul.md), is still sitting in the `linalg.generic` in the bufferized output above, still non-projective. It came through because this pipeline lowered and bufferized with nothing in between: no tiling, no vectorization, so nothing challenged the map. Bufferizing on its own is what let the split and the copy-free accumulator show up in isolation. The schedule that tiles and vectorizes is a separate step, and it runs on the tensor form before any of these buffers exist. That is where the `floordiv` stops being free, and where Post 5 begins.
