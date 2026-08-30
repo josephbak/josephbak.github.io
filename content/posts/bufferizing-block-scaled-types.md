@@ -63,7 +63,7 @@ The code then carries what the type no longer does. Every load returns `i8`, whi
 
 A custom layout cannot buy this back. A `memref` layout is an address function: it says where each element lives, while the element type is fixed above it, one type for the whole buffer. Column-major, strided, tiled all remap the same kind of element to different addresses. What the packed buffer needs is the opposite, two different element types in one buffer, and that is exactly what a layout cannot vary. The element type is decided before the layout is consulted, so no layout attribute recovers the typed access, and the packed buffer stays raw `i8` with hand arithmetic.
 
-So the single buffer is a false economy. It gives a byte array the type system can no longer reason about, with the split it was meant to avoid reappearing by hand at every reader. The honest form is two typed memrefs, each carrying its own element type and shape, each an ordinary dense buffer, each still legible to every pass downstream. A block-scaled type is two components wearing one type name, and memory has no slot for "two things wearing one name." The type presents as one value; in memory it becomes two buffers.
+So the single buffer is a false economy. It gives a byte array the type system can no longer reason about, with the split it was meant to avoid reappearing by hand at every reader. The honest form is two typed memrefs, each carrying its own element type and shape, each an ordinary dense buffer, each still legible to every pass downstream. A block-scaled type is two components wearing one type name, and memory has no slot for "two things wearing one name." The type presents as one value; underneath, it is two.
 
 ## Split at lowering, bufferize later
 
