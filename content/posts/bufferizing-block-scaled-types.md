@@ -58,12 +58,12 @@ The path from one `!mx.tensor` to two buffers is two separate transitions. The f
 |---|---|---|---|
 | count | 1 value | 2 values | 2 buffers |
 | semantics | value | value | memory |
-| produced by | — | my `TypeConverter` (at lowering) | `one-shot-bufferize` |
+| produced by | — | `TypeConverter` | `one-shot-bufferize` |
 | transition | — | count: 1 → 2 | semantics: value → memory |
 
-The split is the first transition, and it already happened in Post 3. It is not part of bufferization at all. When `mx.block_matmul` lowered to `linalg.generic`, the `TypeConverter` registered for the pass rewrote the one `!mx.tensor` operand into two tensor operands, a mantissa tensor and a scale tensor. That is a 1:N type conversion: one source type maps to N replacement types, here N = 2. It runs at lowering, on tensors, and it changes only the count. Both replacements are still value-semantic tensors with no memory attached.
+The split is the first transition, and it already happened in Post 3. It is not part of bufferization at all. When `mx.block_matmul` lowered to `linalg.generic`, the custom `TypeConverter` registered for the pass rewrote the one `!mx.tensor` operand into two tensor operands, a mantissa tensor and a scale tensor. That is a 1:N type conversion: one source type maps to N replacement types, here N = 2. It runs at lowering, on tensors, and it changes only the count. Both replacements are still value-semantic tensors with no memory attached.
 
-The visible proof is the function signature. Going in, one block-scaled argument:
+The proof is the function signature. Going in, one block-scaled argument:
 
 ```mlir
 func.func @block_matmul(%arg0: !mx.tensor<32x64xf8E4M3FN, block_size = 32, scale_type = f8E8M0FNU>, %arg1: tensor<64x64xf32>, %arg2: tensor<32x64xf32>) -> tensor<32x64xf32>
@@ -75,11 +75,12 @@ Coming out of `mx-to-linalg`, that one argument is two:
 func.func @block_matmul(%arg0: tensor<32x64xf8E4M3FN>, %arg1: tensor<32x2xf8E8M0FNU>, %arg2: tensor<64x64xf32>, %arg3: tensor<32x64xf32>) -> tensor<32x64xf32>
 ```
 
-`%arg0` became `%arg0` (mantissa) and `%arg1` (scale). `B` and the accumulator shifted down to `%arg2` and `%arg3`. The arity went from three arguments to four, and the extra one is the split made concrete: the block-scaled type is gone and its two components stand on their own. Everything is still a `tensor`. No buffer exists yet.
+The original `%arg0` became two `%arg0` (mantissa) and `%arg1` (scale). `B` and the accumulator shifted down to `%arg2` and `%arg3`. The arity went from three arguments to four, and the extra one is the split made concrete. Everything is still a `tensor`; no buffer exists yet.
 
-The second transition is bufferization proper, and it is upstream's job. The `one-shot-bufferize` pass takes the tensor pair and gives each tensor a `memref`, turning value semantics into memory semantics. It does not change the count: two tensors become two buffers, with `B` and the accumulator becoming buffers alongside them. The mantissa and scale are already separate by the time it runs, so bufferization never sees a block-scaled type and never reasons about the split. It bufferizes four dense, standard tensors, each the way any tensor bufferizes.
+The second transition is bufferization proper. The upstream `one-shot-bufferize` pass takes the tensor pair and gives each tensor a `memref`, turning value semantics into memory semantics. It does not change the count: two tensors become two buffers, with `B` and the accumulator becoming buffers alongside them. Because the mantissa and scale are already separate by the time it runs, bufferization never sees a block-scaled type. It bufferizes four dense, standard tensors.
 
-That ordering is the point. The split is done early, in the `mx-to-linalg` lowering, so by the time bufferization runs there is nothing block-scaled left to handle. Why the accumulator in particular bufferizes without a defensive copy is where the post goes next.
+That ordering is the point. The block-scaled structure is resolved at lowering, one pass before bufferization runs, so the hard part is handled by the type conversion, not the bufferizer. Bufferization is left with an ordinary problem.
+
 
 ## Why split and not pack
 
