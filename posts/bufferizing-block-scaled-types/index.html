@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  
+  
+    
+  
+  <meta name="description" content="A block-scaled type has no single buffer: mantissa and scale differ in both element type and shape. The 1:N split makes two buffers where the type system wants one, and that split is what lets the matmul accumulator write in place, copy-free.">
+
+  <title>4 - Bufferizing Block-Scaled Types: The 1:N Split</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="https://josephbak.github.io/img/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://josephbak.github.io/img/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://josephbak.github.io/img/apple-touch-icon.png">
+  
+  <style>
+
+  /* light mode colors */
+  body {
+    --primary-color: #5871a2;
+    --primary-pale-color: #5871a233;
+    --primary-decoration-color: #5871a210;
+    --bg-color: #ffffff;
+    --text-color: #2f3030;
+    --text-pale-color: #767676;
+    --text-decoration-color: #a9a9a9;
+    --highlight-mark-color: #5f75b020;
+
+    --callout-note-color: #5871a2;
+    --callout-tip-color: #268556;
+    --callout-important-color: #885fc9;
+    --callout-warning-color: #ab6632;
+    --callout-caution-color: #c64e4e;
+  }
+
+  /* dark mode colors */
+  body.dark {
+    --primary-color: #6f8fd1;
+    --primary-pale-color: #6f8fd166;
+    --primary-decoration-color: #6f8fd112;
+    --bg-color: #1c1c1c;
+    --text-color: #c1c1c1;
+    --text-pale-color: #848484;
+    --text-decoration-color: #5f5f5f;
+    --highlight-mark-color: #8296cb3b;
+
+    --callout-note-color: #6f8fd1;
+    --callout-tip-color: #47976f;
+    --callout-important-color: #9776cd;
+    --callout-warning-color: #ad7a52;
+    --callout-caution-color: #d06161;
+  }
+
+  /* typography */
+  body {
+    --main-font: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --code-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --homepage-max-width: 768px;
+    --main-max-width: 768px;
+    --avatar-size: 60px;
+    --font-size: 16px;
+    --line-height: 1.75;
+    --img-border-radius: 0px;
+    --detail-border-radius: 0px;
+    --dark-mode-img-brightness: 0.75;
+    --dark-mode-chart-brightness: 0.75;
+    --inline-code-border-radius: 2px;
+    --inline-code-bg-color: var(--primary-decoration-color);
+    --block-code-border-radius: 0px;
+    --block-code-border-color: var(--primary-color);
+    --detail-border-color: var(--primary-color);
+  }
+
+</style>
+
+  <link rel="stylesheet" href="https://josephbak.github.io/main.css">
+  
+
+<link id="hl" rel="stylesheet" type="text/css" href="/hl-light.css" />
+
+
+
+  
+</head>
+
+<body class="post">
+  
+  <script>
+    const theme = sessionStorage.getItem('theme');
+    const match = window.matchMedia("(prefers-color-scheme: dark)").matches
+    if ((theme && theme == 'dark') || (!theme && match)) {
+      document.body.classList.add('dark');
+      const hl = document.querySelector('link#hl');
+      if (hl) hl.href = 'https://josephbak.github.io/hl-dark.css';
+    }
+  </script>
+  
+  
+<div id="wrapper">
+  <div id="blank"></div>
+  <aside>
+    
+    
+    <nav>
+      <ul>
+        
+        <li>
+          <a class="h2" href="#a-tensor-is-a-value-a-buffer-is-a-place">A tensor is a value, a buffer is a place</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#why-a-block-scaled-type-needs-two-buffers">Why a block-scaled type needs two buffers</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#split-at-lowering-bufferize-later">Split at lowering, bufferize later</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#teaching-an-old-pass-about-new-ops">Teaching an old pass about new ops</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#getting-the-accumulation-copy-free">Getting the accumulation copy-free</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#what-the-split-bought">What the split bought</a>
+          
+        </li>
+        
+      </ul>
+    </nav>
+    
+    
+    <button id="back-to-top" aria-label="back to top">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-arrow-up"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+
+    </button>
+    
+  </aside>
+  <main>
+    
+<header>
+  <nav>
+    <a id="back-link" href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts">← Back</a>
+  </nav>
+</header>
+
+
+    <div>
+      
+      
+      
+      
+      <div id="copy-cfg" style="display: none;" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+"></div>
+      
+      <article class="prose">
+        <h1>4 - Bufferizing Block-Scaled Types: The 1:N Split</h1>
+        <div id="post-info">
+          <div id="date">
+            <span id="publish">Aug 31, 2026</span>
+            </div>
+
+          
+          <div id="tags">
+            <a class="instant" href="https://josephbak.github.io//tags/mlir"><span>#</span>mlir</a><a class="instant" href="https://josephbak.github.io//tags/compilers"><span>#</span>compilers</a><a class="instant" href="https://josephbak.github.io//tags/quantization"><span>#</span>quantization</a><a class="instant" href="https://josephbak.github.io//tags/bufferization"><span>#</span>bufferization</a>
+          </div>
+          
+        </div>
+
+        
+        
+
+        
+
+        <!-- KaTeX includes (inline; requires markdown.render_unsafe = true) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
+<script>
+ document.addEventListener("DOMContentLoaded", function() {
+ renderMathInElement(document.body, {
+ delimiters: [
+ {left: "$$", right: "$$", display: true},
+ {left: "\\[", right: "\\]", display: true},
+ {left: "$", right: "$", display: false},
+ {left: "\\(", right: "\\)", display: false}
+ ],
+ throwOnError: false
+ });
+ });
+</script>
+<h2 id="a-tensor-is-a-value-a-buffer-is-a-place">A tensor is a value, a buffer is a place<a class="zola-anchor" href="#a-tensor-is-a-value-a-buffer-is-a-place" aria-label="Anchor link for: a-tensor-is-a-value-a-buffer-is-a-place" style="visibility: hidden;"></a>
+</h2>
+<p><a href="https://josephbak.github.io/posts/lowering-mx-block-matmul/">Post 3</a> lowered <code>mx.block_matmul</code> to a single <code>linalg.generic</code> on tensors. By the end of it, the block-scaled operand was no longer one value: the lowering consumed a <code>!mx.tensor</code> and threaded through two tensors in its place, a mantissa tensor and a scale tensor, each with its own element type and its own shape.</p>
+<p>Post 3 stopped at tensors: one <code>!mx.tensor</code> value had become two tensors, and how those become two buffers was left for here.</p>
+<p>The gap between those two is where the work is. A tensor is a value. It has no memory location, no allocation, no aliasing. Somewhere between the linalg form Post 3 produced and a program that runs, every tensor has to become a <code>memref</code> (memory reference): a concrete buffer with an address. For an ordinary tensor that step is close to mechanical. For a block-scaled type it is the problem this post is about, because a block-scaled type does not have a single buffer it can bufferize into, and the reason it doesn't is baked into what the type is.</p>
+<p>This post is about one transition and one payoff. The transition: a value-semantic block-scaled type has no 1:1 image in memory, so it splits into two buffers rather than one. The payoff, once the split is done and the ops reach bufferization as ordinary tensors: the matmul's accumulator bufferizes in place, with no defensive copy, which is what keeps the memory-traffic benchmark honest. The split is the spine. The copy-free accumulation is what it sets up.</p>
+<p>The split and the bufferization are not the same step, and it is worth keeping them apart. The two-tensor form already existed at the end of Post 3, on tensors, before any buffer was allocated. Bufferization takes that pair the rest of the way to memory. Counting and memory are separate axes.</p>
+<h2 id="why-a-block-scaled-type-needs-two-buffers">Why a block-scaled type needs two buffers<a class="zola-anchor" href="#why-a-block-scaled-type-needs-two-buffers" aria-label="Anchor link for: why-a-block-scaled-type-needs-two-buffers" style="visibility: hidden;"></a>
+</h2>
+<p>For an ordinary <code>tensor&lt;32x64xf32&gt;</code>, bufferization is direct. One tensor, one buffer, 32 by 64 four-byte floats laid out in memory. The element type fixes the byte width, the shape fixes the extent, and the buffer is those two facts made physical.</p>
+<p>A block-scaled value has no such buffer. <code>A</code>'s mantissa is <code>f8E4M3FN</code>, one byte per element, at full <code>32×64</code> resolution. Its scale is <code>f8E8M0FNU</code>, also one byte, but at <code>32×2</code>: one value per 32-element block along the contraction axis (<a href="https://josephbak.github.io/posts/lowering-mx-block-matmul/">Post 3</a> established that shape arithmetic). The two disagree on both axes that define a buffer, element type and shape, so no single element type and no single extent describes both. There is no one <code>memref</code> that holds both.</p>
+<p>The obvious rescue is to drop the type. If no <em>typed</em> buffer holds both, use one untyped one: a flat <code>memref&lt;...xi8&gt;</code> of raw bytes, big enough for the mantissa and the scale together, with the structure managed by hand. Both components are just bytes, and bytes fit end to end:</p>
+<pre class="z-code"><code><span class="z-text z-plain">memref&lt;2112xi8&gt;   (one flat buffer, 2112 bytes)
+</span><span class="z-text z-plain">
+</span><span class="z-text z-plain">[ mantissa: bytes 0..2047 ]  [ scale: bytes 2048..2111 ]
+</span><span class="z-text z-plain">   32 x 64 = 2048               32 x 2 = 64
+</span></code></pre>
+<p>It fits. The objection is not that packing is impossible; it is what packing costs at every point that reads the buffer.</p>
+<p>The point of a <code>memref</code> type is that it describes its own buffer. <code>memref&lt;32x2xf8E8M0FNU&gt;</code> carries its element type and its shape, so an access is a logical coordinate, <code>load %scale[i, b]</code>, and the compiler derives the address and hands back a typed value. The type does the bookkeeping. The packed <code>i8</code> buffer throws that away. Its type says only "2112 bytes." It does not record which bytes are mantissa and which are scale, or that the two differ in element type and shape at all. The single <code>i8</code> type erases exactly the distinction that made them two things.</p>
+<p>The code then carries what the type no longer does. Every load returns <code>i8</code>, which is not what the bytes are, so each access has to <code>bitcast</code> back to <code>f8E4M3FN</code> or <code>f8E8M0FNU</code> by hand. The boundary at 2048 and the two strides are not in the type either, so they are hand-written into every op that touches the buffer. Change the block size and the boundary moves and the strides change, and every access site has to be edited by hand, because none of them learned it from a type.</p>
+<p>A custom layout cannot buy this back. A <code>memref</code> layout is an address function: it says where each element lives, while the element type is fixed above it, one type for the whole buffer. Column-major, strided, tiled all remap the same kind of element to different addresses. What the packed buffer needs is the opposite, two different element types in one buffer, and that is exactly what a layout cannot vary. The element type is decided before the layout is consulted, so no layout attribute recovers the typed access, and the packed buffer stays raw <code>i8</code> with hand arithmetic.</p>
+<p>So the single buffer is a false economy. It gives a byte array the type system can no longer reason about, with the split it was meant to avoid reappearing by hand at every reader. The honest form is two typed memrefs, each carrying its own element type and shape, each an ordinary dense buffer, each still legible to every pass downstream. A block-scaled type is two components wearing one type name, and memory has no slot for "two things wearing one name." The type presents as one value; underneath, it is two.</p>
+<h2 id="split-at-lowering-bufferize-later">Split at lowering, bufferize later<a class="zola-anchor" href="#split-at-lowering-bufferize-later" aria-label="Anchor link for: split-at-lowering-bufferize-later" style="visibility: hidden;"></a>
+</h2>
+<p>The path from one <code>!mx.tensor</code> to two buffers is two separate transitions. The first changes how many values there are. The second changes what those values are. They happen in different passes, one in the <code>mx-to-linalg</code> lowering and one upstream, and they move along different axes.</p>
+<table><thead><tr><th>stage</th><th><code>!mx.tensor</code></th><th>tensor pair</th><th>memref pair</th></tr></thead><tbody>
+<tr><td>count</td><td>1 value</td><td>2 values</td><td>2 buffers</td></tr>
+<tr><td>semantics</td><td>value</td><td>value</td><td>memory</td></tr>
+<tr><td>produced by</td><td>—</td><td><code>TypeConverter</code></td><td><code>one-shot-bufferize</code></td></tr>
+<tr><td>transition</td><td>—</td><td>count: 1 → 2</td><td>semantics: value → memory</td></tr>
+</tbody></table>
+<p>The split is the first transition, and it already happened in Post 3. It is not part of bufferization at all. When <code>mx.block_matmul</code> lowered to <code>linalg.generic</code>, the custom <code>TypeConverter</code> registered for the pass rewrote the one <code>!mx.tensor</code> operand into two tensor operands, a mantissa tensor and a scale tensor. That is a 1:N type conversion: one source type maps to N replacement types, here N = 2. It runs at lowering, on tensors, and it changes only the count. Both replacements are still value-semantic tensors with no memory attached.</p>
+<p>The proof is the function signature. Going in, one block-scaled argument:</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">func.func @block_matmul(%arg0: !mx.tensor&lt;32x64xf8E4M3FN, block_size = 32, scale_type = f8E8M0FNU&gt;, %arg1: tensor&lt;64x64xf32&gt;, %arg2: tensor&lt;32x64xf32&gt;) -&gt; tensor&lt;32x64xf32&gt;
+</span></code></pre>
+<p>Coming out of <code>mx-to-linalg</code>, that one argument is two:</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">func.func @block_matmul(%arg0: tensor&lt;32x64xf8E4M3FN&gt;, %arg1: tensor&lt;32x2xf8E8M0FNU&gt;, %arg2: tensor&lt;64x64xf32&gt;, %arg3: tensor&lt;32x64xf32&gt;) -&gt; tensor&lt;32x64xf32&gt;
+</span></code></pre>
+<p>The original <code>%arg0</code> became two: <code>%arg0</code> (mantissa) and <code>%arg1</code> (scale). <code>B</code> and the accumulator shifted down to <code>%arg2</code> and <code>%arg3</code>. The arity went from three arguments to four, and the extra one is the split made concrete. Everything is still a <code>tensor</code>; no buffer exists yet.</p>
+<p>The second transition is bufferization proper. The upstream <code>one-shot-bufferize</code> pass takes the tensor pair and gives each tensor a <code>memref</code>, turning value semantics into memory semantics. It does not change the count: two tensors become two buffers, with <code>B</code> and the accumulator becoming buffers alongside them. Because the mantissa and scale are already separate by the time it runs, bufferization never sees a block-scaled type. It bufferizes four dense, standard tensors.</p>
+<p>That ordering is the point. The block-scaled structure is resolved at lowering, one pass before bufferization runs, so the hard part is handled by the type conversion, not the bufferizer. Bufferization is left with an ordinary problem.</p>
+<h2 id="teaching-an-old-pass-about-new-ops">Teaching an old pass about new ops<a class="zola-anchor" href="#teaching-an-old-pass-about-new-ops" aria-label="Anchor link for: teaching-an-old-pass-about-new-ops" style="visibility: hidden;"></a>
+</h2>
+<p>The <code>one-shot-bufferize</code> pass has to bufferize whatever ops a pipeline puts in front of it. Here that is <code>linalg</code>, <code>arith</code>, <code>tensor</code>, and <code>func</code> ops, all upstream, but the pass cannot assume that. It is built to bufferize op sets it was never compiled against, and that generality is what shapes how it works.</p>
+<p>There are two ways a pass can know how to transform an op, and they differ in where the knowledge lives.</p>
+<p>The first is a pattern, which is how the <code>mx-to-linalg</code> lowering works. The pass carries the knowledge: a pattern per op it handles, an enumerated set of ops it knows, and nothing outside that set gets touched. That works because the lowering deals with a closed set, four mx ops, all known when the pass was written. The pass can hold the whole list.</p>
+<p>Bufferization cannot work that way, because its op set is open. It cannot carry a pattern for every op that will ever need bufferizing, including out-of-tree ops written after the pass itself was compiled. So the knowledge cannot live in the pass. The pass can only ask; the op has to answer.</p>
+<p>That is the second mechanism: an interface. <code>BufferizableOpInterface</code> is a contract an op implements, saying "here is how to bufferize me." The pass calls <code>op.bufferize()</code> without knowing the concrete op type, and each op supplies its own logic, so the pass handles ops it has never seen. The deciding axis between the two mechanisms is not whether the transformation is a lowering. Both <code>mx-to-linalg</code> and bufferization are lowerings. The axis is whether the consumer's op set is closed, which allows a pattern, or open, which forces an interface.</p>
+<p>This is the <a rel="nofollow noreferrer" href="https://en.wikipedia.org/wiki/Expression_problem">expression problem</a>: extending a system with both new behaviors and new data types without editing existing code on either side. Here the extension is one direction of it. Bufferization is a new behavior added to existing upstream ops, and the external model supplies that behavior from outside, so the ops' own dialects are never touched. The same interface also runs the other direction, a new op implementing it to gain bufferization without the pass changing, though this dialect does not need that: its ops are gone before bufferization runs.</p>
+<p>An external model implements an interface for a dialect's ops, but lives outside that dialect rather than inside it. The bufferization logic for <code>linalg</code> ops could have gone inside the <code>linalg</code> dialect, but that would make <code>linalg</code> depend on the bufferization infrastructure, and a dialect should not drag in a transformation framework just to define its ops. So the implementation lives outside the op-owning dialect, which keeps <code>linalg</code> free of any bufferization dependency at the cost of one step: something has to attach the model before the pass runs.</p>
+<p>Upstream implements <code>BufferizableOpInterface</code> for its own ops, <code>linalg</code>, <code>arith</code>, <code>tensor</code>, <code>func</code>, the ones the lowering produces. Those implementations exist; attaching them to the dialect's context does not happen automatically. The models are upstream; the registration that attaches them is not. Until it runs, nothing bufferizes.</p>
+<p>Four registrations, one per dialect: <code>arith</code>, <code>linalg</code>, <code>tensor</code>, <code>func</code>. The count tracks upstream dialects in the lowered IR, not mx ops, of which there are none left by the time bufferization runs. Add an op from a fifth dialect and there would be a fifth registration.</p>
+<p>Three of the four are filed under their own dialect's <code>Transforms</code> directory. <code>func</code> is not: its model lives under the bufferization dialect, in the <code>func_ext</code> namespace. Bufferizing a function boundary is a calling-convention decision about how tensors cross a signature, which is bufferization policy, not a fact about what <code>func.func</code> is, so the model is filed with the pass that needs it, not the dialect it operates on.</p>
+<p>A missing registration surfaces only when the pass crashes on it. Each unattached model makes the pass fail with a precise error, "promised but not implemented," naming the one dialect it could not bufferize. Because the errors come one at a time, each pointing at a single dialect, the full set is mechanical to find rather than one opaque failure to untangle.</p>
+<h2 id="getting-the-accumulation-copy-free">Getting the accumulation copy-free<a class="zola-anchor" href="#getting-the-accumulation-copy-free" aria-label="Anchor link for: getting-the-accumulation-copy-free" style="visibility: hidden;"></a>
+</h2>
+<p>With the models registered, bufferization runs, and everything is in memory. What remains is one question about the accumulator, and it is where the memory-traffic thesis is either kept or quietly broken.</p>
+<p><code>mx.block_matmul</code> accumulates: its result is <code>acc + A·B</code>, and the <code>acc</code> operand is the running sum. When it bufferizes, <code>acc</code> becomes a buffer and the result becomes a buffer too. The safe, conservative thing for a bufferizer to do is allocate a fresh buffer for the result, copy <code>acc</code> into it, and accumulate there, leaving the original <code>acc</code> untouched. That defensive copy is a full pass over the accumulator, and for a matmul whose whole purpose is to move as few bytes as possible, an unasked-for copy of the output on every call is exactly the cost the dialect exists to avoid.</p>
+<p>The copy is unnecessary here, and the bufferizer proves it. Running the <code>mx-to-linalg</code> lowering and <code>one-shot-bufferize</code> with <code>bufferize-function-boundaries=1</code> gives (indexing maps and payload elided; bufferization leaves both unchanged):</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">func.func @block_matmul(
+</span><span class="z-text z-plain">    %arg0: memref&lt;32x64xf8E4M3FN, strided&lt;[?, ?], offset: ?&gt;&gt;,   // mantissa
+</span><span class="z-text z-plain">    %arg1: memref&lt;32x2xf8E8M0FNU, strided&lt;[?, ?], offset: ?&gt;&gt;,   // scale
+</span><span class="z-text z-plain">    %arg2: memref&lt;64x64xf32, strided&lt;[?, ?], offset: ?&gt;&gt;,        // B
+</span><span class="z-text z-plain">    %arg3: memref&lt;32x64xf32, strided&lt;[?, ?], offset: ?&gt;&gt;)        // acc
+</span><span class="z-text z-plain">    -&gt; memref&lt;32x64xf32, strided&lt;[?, ?], offset: ?&gt;&gt; {
+</span><span class="z-text z-plain">  linalg.generic {...}
+</span><span class="z-text z-plain">    ins(%arg0, %arg1, %arg2 : ...)
+</span><span class="z-text z-plain">    outs(%arg3 : memref&lt;32x64xf32, strided&lt;[?, ?], offset: ?&gt;&gt;) {   // accumulates into acc
+</span><span class="z-text z-plain">    ^bb0(%in: f8E4M3FN, %in_0: f8E8M0FNU, %in_1: f32, %out: f32):
+</span><span class="z-text z-plain">      ...
+</span><span class="z-text z-plain">      %4 = arith.addf %out, %3 : f32
+</span><span class="z-text z-plain">      linalg.yield %4 : f32
+</span><span class="z-text z-plain">  }
+</span><span class="z-text z-plain">  return %arg3 : memref&lt;32x64xf32, strided&lt;[?, ?], offset: ?&gt;&gt;   // returns the same buffer
+</span><span class="z-text z-plain">}
+</span></code></pre>
+<p>The accumulator arrives as <code>%arg3</code>, the <code>linalg.generic</code> writes into it directly through <code>outs</code>, and the function returns that same <code>%arg3</code>. No fresh allocation, no copy. The bytes written are the essential ones, the accumulator's own. The bufferization test for this op asserts exactly that. It is a FileCheck test with a <code>CHECK-NOT: memref.copy</code> line, so the test fails if a copy ever appears in the output.</p>
+<p>Two things had to hold for that. The first is that the op names its destination. <code>acc</code> is the <code>outs</code> operand of the generic, so the bufferizer has a concrete buffer to write into rather than an anonymous result it must find storage for. That destination-passing shape is the reason the accumulator is a real operand and not a fresh output, and it is settled in <a href="https://josephbak.github.io/posts/designing-mx-dialect/">Post 1</a>; here it is what makes the copy-free result reachable at all.</p>
+<p>The second is the analysis that decides the copy can be skipped. The bufferizer asks, for each buffer it wants to write in place: is there any read of this buffer's original value that happens after the write? If there is, the write would clobber a value something still needs, so a defensive copy goes in. If there is not, the write is safe and the copy is skipped. For the accumulator, the only read of its value is the accumulate itself, <code>acc + A·B</code>, and that read is part of the same operation as the write, not a later use of the original. No later reader means no conflict, so the copy is skipped.</p>
+<p>It is easy to state this slightly wrong. The accumulator is read, once, inside the accumulation; the point is only that nothing reads its original value after the write lands. The read that happens and the read that would force a copy are different reads, and the second one does not exist here.</p>
+<p>One flag makes the difference between the copy-free form above and a version with a copy: <code>bufferize-function-boundaries=1</code>. Without it, the bufferizer handles the body but leaves the function signature tensor-typed, and it cannot see whether a caller will read the original <code>acc</code> after the call. Blind past the boundary, it assumes the worst and inserts the defensive copy. With the flag, the signature itself becomes memref-typed under a defined calling convention, and the question the intraprocedural analysis could not answer, whether a later reader exists, is answered by the convention: the caller is responsible for preserving anything it still needs, so this function is free to write <code>acc</code> in place. The <code>?</code> marks on the arguments, <code>strided&lt;[?, ?], offset: ?&gt;</code>, are that convention in the signature. The strides and offset are left dynamic so the boundary accepts a buffer with any layout the caller brings.</p>
+<p>The flag is experimental upstream. Its analysis is intraprocedural and leans on the boundary convention. For a single-function benchmark it holds; a multi-function call graph, where callers and callees have to agree on who copies what, is where its edges would need testing. That is the honest boundary of the v1 result.</p>
+<p>Under that caveat, the copy-free form is what protects the measurement. The benchmark counts bytes moved, and a stray per-call <code>memref.copy</code> of a <code>32×64</code> <code>f32</code> accumulator is 8 KB moved that the workload never asked for, on every matmul. One unnecessary copy would not make the result wrong; it would make the number misreport what the design actually moves. The copy-free form is what keeps the benchmark measuring the matmul, not the matmul plus an accidental copy.</p>
+<h2 id="what-the-split-bought">What the split bought<a class="zola-anchor" href="#what-the-split-bought" aria-label="Anchor link for: what-the-split-bought" style="visibility: hidden;"></a>
+</h2>
+<p>One decision shaped everything in this post: a block-scaled type has no single buffer, so it splits into two. Splitting at lowering meant bufferization inherited an ordinary problem, and naming the accumulator as a destination let it bufferize in place, copy-free. The split was the spine; the copy-free accumulator was what it paid for.</p>
+<p>The <code>floordiv</code> in the scale map came through untouched. That expression, the one that made the lowering clean in <a href="https://josephbak.github.io/posts/lowering-mx-block-matmul/">Post 3</a>, is still sitting in the <code>linalg.generic</code> in the bufferized output above, still non-projective. It came through because this pipeline lowered and bufferized with nothing in between: no tiling, no vectorization, so nothing challenged the map. Bufferizing on its own is what let the split and the copy-free accumulator show up in isolation. The schedule that tiles and vectorizes is a separate step, and it runs on the tensor form before any of these buffers exist. That is where the <code>floordiv</code> stops being free, and where Post 5 begins.</p>
+
+      </article>
+
+      
+      
+
+      
+      
+    </div>
+
+    
+
+
+<footer>
+  <div class="left">
+    <div class="copyright">
+      © 2026 &lt;joseph bak&gt;
+      
+      <span>|</span>
+      Built with <a href="https://www.getzola.org" rel="noreferrer" target="_blank">zola</a> and <a href="https://github.com/isunjn/serene" rel="noreferrer" target="_blank">serene</a>
+      
+    </div>
+  </div>
+
+  <div class="right">
+    
+    
+      
+    
+    
+    <a id="rss-btn" href="https://josephbak.github.io/posts/feed.xml">RSS</a>
+    
+    
+
+    
+    
+    
+    <button id="theme-toggle" aria-label="theme switch">
+      <span class="moon-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M10 7C10 10.866 13.134 14 17 14C18.9584 14 20.729 13.1957 21.9995 11.8995C22 11.933 22 11.9665 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C12.0335 2 12.067 2 12.1005 2.00049C10.8043 3.27098 10 5.04157 10 7ZM4 12C4 16.4183 7.58172 20 12 20C15.0583 20 17.7158 18.2839 19.062 15.7621C18.3945 15.9187 17.7035 16 17 16C12.0294 16 8 11.9706 8 7C8 6.29648 8.08133 5.60547 8.2379 4.938C5.71611 6.28423 4 8.9417 4 12Z" fill="currentColor"></path></svg>
+</span>
+      <span class="sun-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M12 18C8.68629 18 6 15.3137 6 12C6 8.68629 8.68629 6 12 6C15.3137 6 18 8.68629 18 12C18 15.3137 15.3137 18 12 18ZM12 16C14.2091 16 16 14.2091 16 12C16 9.79086 14.2091 8 12 8C9.79086 8 8 9.79086 8 12C8 14.2091 9.79086 16 12 16ZM11 1H13V4H11V1ZM11 20H13V23H11V20ZM3.51472 4.92893L4.92893 3.51472L7.05025 5.63604L5.63604 7.05025L3.51472 4.92893ZM16.9497 18.364L18.364 16.9497L20.4853 19.0711L19.0711 20.4853L16.9497 18.364ZM19.0711 3.51472L20.4853 4.92893L18.364 7.05025L16.9497 5.63604L19.0711 3.51472ZM5.63604 16.9497L7.05025 18.364L4.92893 20.4853L3.51472 19.0711L5.63604 16.9497ZM23 11V13H20V11H23ZM4 11V13H1V11H4Z" fill="currentColor"></path></svg>
+</span>
+    </button>
+    
+  </div>
+</footer>
+
+
+
+
+<dialog id="rss-mask">
+  <div>
+    <a href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml">https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml</a>
+    
+    
+    <button autofocus aria-label="copy" data-link="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z" fill="currentColor"></path></svg>
+
+    </button>
+  </div>
+</dialog>
+
+
+
+  </main>
+</div>
+
+  
+<script src="/js/lightense.min.js"></script>
+
+
+  <script src="https://josephbak.github.io/js/main.js"></script>
+</body>
+
+</html>

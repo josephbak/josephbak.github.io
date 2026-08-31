@@ -71,6 +71,10 @@
         <loc>https://josephbak.github.io/posts/</loc>
     </url>
     <url>
+        <loc>https://josephbak.github.io/posts/bufferizing-block-scaled-types/</loc>
+        <lastmod>2026-08-31</lastmod>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/posts/canonicalization-e8m0-power-of-two/</loc>
         <lastmod>2026-08-17</lastmod>
     </url>
@@ -93,6 +97,9 @@
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/aot-autograd/</loc>
+    </url>
+    <url>
+        <loc>https://josephbak.github.io/tags/bufferization/</loc>
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/cache-optimization/</loc>
