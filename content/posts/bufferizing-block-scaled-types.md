@@ -2,9 +2,9 @@
 title = "4 - Bufferizing Block-Scaled Types: The 1:N Split"
 description = "A block-scaled type has no single buffer: mantissa and scale differ in both element type and shape. The 1:N split makes two buffers where the type system wants one, and that split is what lets the matmul accumulator write in place, copy-free."
 slug = "bufferizing-block-scaled-types"
-date = 2026-08-29
+date = 2026-08-31
 weight = 4
-draft = true
+draft = false
 [taxonomies]
 categories = ["MX-Quantization Dialect"]
 tags = ["mlir", "compilers", "quantization", "bufferization"]
@@ -90,7 +90,7 @@ Coming out of `mx-to-linalg`, that one argument is two:
 func.func @block_matmul(%arg0: tensor<32x64xf8E4M3FN>, %arg1: tensor<32x2xf8E8M0FNU>, %arg2: tensor<64x64xf32>, %arg3: tensor<32x64xf32>) -> tensor<32x64xf32>
 ```
 
-The original `%arg0` became two `%arg0` (mantissa) and `%arg1` (scale). `B` and the accumulator shifted down to `%arg2` and `%arg3`. The arity went from three arguments to four, and the extra one is the split made concrete. Everything is still a `tensor`; no buffer exists yet.
+The original `%arg0` became two: `%arg0` (mantissa) and `%arg1` (scale). `B` and the accumulator shifted down to `%arg2` and `%arg3`. The arity went from three arguments to four, and the extra one is the split made concrete. Everything is still a `tensor`; no buffer exists yet.
 
 The second transition is bufferization proper. The upstream `one-shot-bufferize` pass takes the tensor pair and gives each tensor a `memref`, turning value semantics into memory semantics. It does not change the count: two tensors become two buffers, with `B` and the accumulator becoming buffers alongside them. Because the mantissa and scale are already separate by the time it runs, bufferization never sees a block-scaled type. It bufferizes four dense, standard tensors.
 
@@ -104,7 +104,7 @@ There are two ways a pass can know how to transform an op, and they differ in wh
 
 The first is a pattern, which is how the `mx-to-linalg` lowering works. The pass carries the knowledge: a pattern per op it handles, an enumerated set of ops it knows, and nothing outside that set gets touched. That works because the lowering deals with a closed set, four mx ops, all known when the pass was written. The pass can hold the whole list.
 
-Bufferization cannot work that way, because its op set is open. It cannot carry a pattern for every op that will ever need bufferizing, including ones written out-of-tree, after it was compiled. So the knowledge cannot live in the pass; it has to live on the op.
+Bufferization cannot work that way, because its op set is open. It cannot carry a pattern for every op that will ever need bufferizing, including out-of-tree ops written after the pass itself was compiled. So the knowledge cannot live in the pass. The pass can only ask; the op has to answer.
 
 That is the second mechanism: an interface. `BufferizableOpInterface` is a contract an op implements, saying "here is how to bufferize me." The pass calls `op.bufferize()` without knowing the concrete op type, and each op supplies its own logic, so the pass handles ops it has never seen. The deciding axis between the two mechanisms is not whether the transformation is a lowering. Both `mx-to-linalg` and bufferization are lowerings. The axis is whether the consumer's op set is closed, which allows a pattern, or open, which forces an interface.
 
@@ -118,15 +118,15 @@ Four registrations, one per dialect: `arith`, `linalg`, `tensor`, `func`. The co
 
 Three of the four are filed under their own dialect's `Transforms` directory. `func` is not: its model lives under the bufferization dialect, in the `func_ext` namespace. Bufferizing a function boundary is a calling-convention decision about how tensors cross a signature, which is bufferization policy, not a fact about what `func.func` is, so the model is filed with the pass that needs it, not the dialect it operates on.
 
-The registrations are missing until they crash. Each unattached model makes the pass fail with a precise error, "promised but not implemented," naming the one dialect it could not bufferize. Because the errors come one at a time, each pointing at a single dialect, the full set is mechanical to find rather than one opaque failure to untangle.
+A missing registration surfaces only when the pass crashes on it. Each unattached model makes the pass fail with a precise error, "promised but not implemented," naming the one dialect it could not bufferize. Because the errors come one at a time, each pointing at a single dialect, the full set is mechanical to find rather than one opaque failure to untangle.
 
 ## Getting the accumulation copy-free
 
-The split is done and everything is in memory. What remains is one question about the accumulator, and it is where the memory-traffic thesis is either kept or quietly broken.
+With the models registered, bufferization runs, and everything is in memory. What remains is one question about the accumulator, and it is where the memory-traffic thesis is either kept or quietly broken.
 
-`mx.block_matmul` accumulates: its result is `acc + A·B`, and the `acc` operand is the running sum. When it bufferizes, `acc` becomes a buffer and the result becomes a buffer too. The safe, dumb thing for a bufferizer to do is allocate a fresh buffer for the result, copy `acc` into it, and accumulate there, leaving the original `acc` untouched. That defensive copy is a full pass over the accumulator, and for a matmul whose whole purpose is to move as few bytes as possible, an unasked-for copy of the output on every call is exactly the cost the dialect exists to avoid.
+`mx.block_matmul` accumulates: its result is `acc + A·B`, and the `acc` operand is the running sum. When it bufferizes, `acc` becomes a buffer and the result becomes a buffer too. The safe, conservative thing for a bufferizer to do is allocate a fresh buffer for the result, copy `acc` into it, and accumulate there, leaving the original `acc` untouched. That defensive copy is a full pass over the accumulator, and for a matmul whose whole purpose is to move as few bytes as possible, an unasked-for copy of the output on every call is exactly the cost the dialect exists to avoid.
 
-The copy is unnecessary here, and the bufferizer proves it. Running the `mx-to-linalg` lowering and `one-shot-bufferize` with `bufferize-function-boundaries=1` gives (verbatim, comments added):
+The copy is unnecessary here, and the bufferizer proves it. Running the `mx-to-linalg` lowering and `one-shot-bufferize` with `bufferize-function-boundaries=1` gives (indexing maps and payload elided; bufferization leaves both unchanged):
 
 ```mlir
 func.func @block_matmul(
@@ -147,24 +147,22 @@ func.func @block_matmul(
 }
 ```
 
-The accumulator arrives as `%arg3`, the `linalg.generic` writes into it directly through `outs`, and the function returns that same `%arg3`. No fresh allocation, no copy. The bytes written are the essential ones, the accumulator's own. The bufferization test for this op asserts exactly that, checking with `CHECK-NOT` that no `memref.copy` survives.
+The accumulator arrives as `%arg3`, the `linalg.generic` writes into it directly through `outs`, and the function returns that same `%arg3`. No fresh allocation, no copy. The bytes written are the essential ones, the accumulator's own. The bufferization test for this op asserts exactly that. It is a FileCheck test with a `CHECK-NOT: memref.copy` line, so the test fails if a copy ever appears in the output.
 
 Two things had to hold for that. The first is that the op names its destination. `acc` is the `outs` operand of the generic, so the bufferizer has a concrete buffer to write into rather than an anonymous result it must find storage for. That destination-passing shape is the reason the accumulator is a real operand and not a fresh output, and it is settled in [Post 1](@/posts/designing-mx-dialect.md); here it is what makes the copy-free result reachable at all.
 
 The second is the analysis that decides the copy can be skipped. The bufferizer asks, for each buffer it wants to write in place: is there any read of this buffer's original value that happens after the write? If there is, the write would clobber a value something still needs, so a defensive copy goes in. If there is not, the write is safe and the copy is skipped. For the accumulator, the only read of its value is the accumulate itself, `acc + A·B`, and that read is part of the same operation as the write, not a later use of the original. No later reader means no conflict, so the copy is skipped.
 
-That distinction is the whole mechanism, and it is easy to state slightly wrong. It is not that the accumulator is never read: it is read, once, inside the accumulation. It is that nothing reads the *original* accumulator *after* the write lands. The read that exists and the read that would cause a conflict are different reads, one during the operation and one that would have to come after it, and only the second forces a copy. There is no second read here.
+It is easy to state this slightly wrong. The accumulator is read, once, inside the accumulation; the point is only that nothing reads its original value after the write lands. The read that happens and the read that would force a copy are different reads, and the second one does not exist here.
 
-One flag makes the difference between the copy-free form above and a version with a copy: `bufferize-function-boundaries=1`. Without it, the bufferizer handles the body but leaves the function signature tensor-typed, and it cannot see whether a caller will read the original `acc` after the call. Blind past the boundary, it assumes the worst and inserts the defensive copy. With the flag, the signature itself becomes memref-typed under a defined calling convention, and the question the intraprocedural analysis could not answer, whether a later reader exists, is answered by the convention: the caller is responsible for preserving anything it still needs, so this function is free to write `acc` in place. The `?` marks on the arguments, `strided<[?, ?], offset: ?>`, are that convention in the signature: the strides and offset are left dynamic so the boundary accepts a buffer with any layout the caller brings.
+One flag makes the difference between the copy-free form above and a version with a copy: `bufferize-function-boundaries=1`. Without it, the bufferizer handles the body but leaves the function signature tensor-typed, and it cannot see whether a caller will read the original `acc` after the call. Blind past the boundary, it assumes the worst and inserts the defensive copy. With the flag, the signature itself becomes memref-typed under a defined calling convention, and the question the intraprocedural analysis could not answer, whether a later reader exists, is answered by the convention: the caller is responsible for preserving anything it still needs, so this function is free to write `acc` in place. The `?` marks on the arguments, `strided<[?, ?], offset: ?>`, are that convention in the signature. The strides and offset are left dynamic so the boundary accepts a buffer with any layout the caller brings.
 
 The flag is experimental upstream. Its analysis is intraprocedural and leans on the boundary convention. For a single-function benchmark it holds; a multi-function call graph, where callers and callees have to agree on who copies what, is where its edges would need testing. That is the honest boundary of the v1 result.
 
-The reason any of this matters beyond tidiness is the measurement. The benchmark counts bytes moved, and a stray per-call `memref.copy` of a `32×64` `f32` accumulator is 8 KB of traffic the workload never asked for, on every matmul. One unnecessary copy would not make the result wrong; it would make the number misreport what the design actually moves. The copy-free form is what keeps the number the design's number.
+Under that caveat, the copy-free form is what protects the measurement. The benchmark counts bytes moved, and a stray per-call `memref.copy` of a `32×64` `f32` accumulator is 8 KB moved that the workload never asked for, on every matmul. One unnecessary copy would not make the result wrong; it would make the number misreport what the design actually moves. The copy-free form is what keeps the benchmark measuring the matmul, not the matmul plus an accidental copy.
 
 ## What the split bought
 
-The whole post turned on one move: a block-scaled type has no single buffer, so it becomes two. That split is not a bufferization trick. It happens at lowering, on tensors, and by the time bufferization runs there is nothing block-scaled left, only four ordinary tensors that bufferize the way any tensor does. Splitting early is what let the hard part of bufferization be no part at all.
-
-The split also paid for the accumulator. Because `acc` crosses the boundary as its own operand and nothing reads its original value after the write, the bufferizer writes it in place, and the matmul returns the buffer it accumulated into with no defensive copy. That is what keeps the benchmark honest: the bytes it counts are the bytes the design moves, not bytes an unnecessary copy added.
+One decision shaped everything in this post: a block-scaled type has no single buffer, so it splits into two. Splitting at lowering meant bufferization inherited an ordinary problem, and naming the accumulator as a destination let it bufferize in place, copy-free. The split was the spine; the copy-free accumulator was what it paid for.
 
 The `floordiv` in the scale map came through untouched. That expression, the one that made the lowering clean in [Post 3](@/posts/lowering-mx-block-matmul.md), is still sitting in the `linalg.generic` in the bufferized output above, still non-projective. It came through because this pipeline lowered and bufferized with nothing in between: no tiling, no vectorization, so nothing challenged the map. Bufferizing on its own is what let the split and the copy-free accumulator show up in isolation. The schedule that tiles and vectorizes is a separate step, and it runs on the tensor form before any of these buffers exist. That is where the `floordiv` stops being free, and where Post 5 begins.
