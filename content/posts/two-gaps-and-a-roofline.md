@@ -135,9 +135,9 @@ Vectorizing the edited nest needs a schedule that only vectorizes, since the til
 ```mlir
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
-    %matmul = transform.structured.match ops{["linalg.generic"]} in %root
+    %g = transform.structured.match ops{["linalg.generic"]} in %root
       : (!transform.any_op) -> !transform.any_op
-    transform.structured.vectorize %matmul : !transform.any_op
+    transform.structured.vectorize %g : !transform.any_op
     transform.yield
   }
 }
