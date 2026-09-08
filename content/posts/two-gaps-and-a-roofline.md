@@ -115,35 +115,64 @@ So the access is not unvectorizable. It is unvectorizable as written.
 
 ## What the map would have to become
 
-Two changes make the tiled op vectorizable, and neither works without the other. The scale operand `tensor<32x1xf8E8M0FNU>` has to become `tensor<32xf8E8M0FNU>`, and its map `(d0, d1, d2) -> (d0, d2 floordiv 32)` has to become `(d0, d1, d2) -> (d0)`.
+Written differently, the same access vectorizes. Take the tiled nest exactly as the schedule emitted it and change the scale operand's map and its type:
 
-They are locked together because the `floordiv` in the map is, after tiling, computing something already decided. `#map` on the `affine.apply` selects the block once per tile from the loop's induction variable, and `extract_slice` narrows the scale from `32x2` to `32x1` accordingly. By the time the generic runs, one block-column is all that remains. Inside the tile `d2` ranges over 0 to 31, so `d2 floordiv 32` evaluates to 0 on every iteration, indexing the only column the operand has. The expression is vestigial: `extract_slice` took over its job, and it survives because tiling rewrote the operand shapes without touching the map.
+```diff
+-#map2 = affine_map<(d0, d1, d2) -> (d0, d2 floordiv 32)>
++#map2 = affine_map<(d0, d1, d2) -> (d0)>
 
-Deleting the arithmetic alone does not help. A map of `(d0, 0)` is no more a projected permutation than `(d0, d2 floordiv 32)`, since a literal is not a bare iteration dimension either. As long as the operand carries a second axis, the map has to index it with something, and anything it indexes with fails the check. Removing the axis is what allows the map to stop mentioning it.
+-%extracted_slice_3 = tensor.extract_slice %arg1[0, %2] [32, 1] [1, 1] : tensor<32x2xf8E8M0FNU> to tensor<32x1xf8E8M0FNU>
++%extracted_slice_3 = tensor.extract_slice %arg1[0, %2] [32, 1] [1, 1] : tensor<32x2xf8E8M0FNU> to tensor<32xf8E8M0FNU>
 
-Nothing about this is available before tiling. Untiled, the scale operand is the full `32x2`, no `affine.apply` has selected anything, and the map's `floordiv` is the only thing distinguishing block 0 from block 1 as `k` sweeps 0 to 63. A map of `(d0)` there asserts the scale depends on `m` alone, which is false: it would read one scale for a reduction that spans two. The rewrite is not a cleanup that tiling makes convenient. It is a claim about the data that tiling makes true.
-
-Applying both changes by hand to the tiled nest, and running `structured.vectorize` on the result, gives the broadcast form. Two files carry this, and both are hand-edited rather than pipeline output. `matmul_tiled_broadcast.mlir` lifts one tile's generic into its own function with the sliced shapes as arguments, isolating it from the loop structure. `matmul_tiled_broadcast_loops.mlir` is genuine `schedule.mlir` output with the two changes applied in place and everything else left alone, which confirms the form survives inside the real `scf.for` nest with the block-index hoist around it. Both vectorize to the same thing. From the isolated one:
-
-```mlir
-#map = affine_map<(d0, d1) -> (d0, 0, d1)>
-#map1 = affine_map<(d0) -> (d0, 0, 0)>
-#map2 = affine_map<(d0, d1) -> (0, d1, d0)>
-...
-    %1 = vector.transfer_read %arg0[%c0, %c0], %0 {permutation_map = #map} : tensor<32x32xf8E4M3FN>, vector<32x32x32xf8E4M3FN>
-    %3 = vector.transfer_read %arg1[%c0], %2 {permutation_map = #map1} : tensor<32xf8E8M0FNU>, vector<32x32x32xf8E8M0FNU>
-    %5 = vector.transfer_read %arg2[%c0, %c0], %4 {permutation_map = #map2} : tensor<32x32xf32>, vector<32x32x32xf32>
-    %7 = vector.transfer_read %arg3[%c0, %c0], %6 : tensor<32x32xf32>, vector<32x32xf32>
-    ...
-    %12 = vector.multi_reduction <add>, %11, %7 [2] : vector<32x32x32xf32> to vector<32x32xf32>
+-%3 = linalg.generic { ... } ins(%extracted_slice, %extracted_slice_3, %extracted_slice_4 : tensor<32x32xf8E4M3FN>, tensor<32x1xf8E8M0FNU>, tensor<32x32xf32>) ...
++%3 = linalg.generic { ... } ins(%extracted_slice, %extracted_slice_3, %extracted_slice_4 : tensor<32x32xf8E4M3FN>, tensor<32xf8E8M0FNU>, tensor<32x32xf32>) ...
 ```
 
-Every input is read into a `vector<32x32x32>` covering the tile's whole `(m, n, k)` space, and each `permutation_map` says how that operand's own axes map into those three positions. A `0` in a position means the operand does not vary along it, so one value is broadcast across the whole extent.
+The map loses its `floordiv`; the operand loses its trailing unit axis. The type appears twice, once where the slice produces it and once where the generic lists its inputs, so both occurrences update together. Nothing else moves: same loops, same `affine.apply`, same payload, same other three operands.
 
-The mantissa map `(d0, 0, d1)` places rows at `m` and columns at `k`, with a `0` at `n`: the mantissa is distinct at every `(m, k)` and reused across the output's columns. The `B` map `(0, d1, d0)` has its `0` at `m`, for the same reason on the other operand. The scale map `(d0, 0, 0)` is the only one with two. It varies along `m` and nothing else, so a single read per row supplies all 1024 points of the tile. That is the memory behavior the block format was designed to produce, made explicit in the IR: one scale value fetched once, spread across the 32 contraction positions it governs.
+Vectorizing the edited nest needs a schedule that only vectorizes, since the tiling has already been done and baked in:
 
-The last operation is worth reading against that. `vector.multi_reduction <add>, %11, %7 [2]` collapses axis 2, the contraction axis, summing 32 products into each output element. So the same axis is broadcast along for the scale and reduced along for the accumulator. The two are not in tension because they describe different quantities: the scale is one value reused across the reduction, and the accumulator is the running sum that the reduction produces. The broadcast is about where a value comes from; the reduction is about where the results go.
+```mlir
+module attributes {transform.with_named_sequence} {
+  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+    %matmul = transform.structured.match ops{["linalg.generic"]} in %root
+      : (!transform.any_op) -> !transform.any_op
+    transform.structured.vectorize %matmul : !transform.any_op
+    transform.yield
+  }
+}
+```
 
-Vector sizes were left to inference here rather than given explicitly, so the shapes come from the tile's static extents. The `32` in `vector<32x32x32>` is a logical width in the IR, not a machine register width; mapping it onto a target's actual vector units is a further lowering this post does not follow.
+Run against the edited file, it succeeds:
+
+```mlir
+#map = affine_map<(d0) -> (d0 floordiv 32)>
+#map1 = affine_map<(d0, d1) -> (d0, 0, d1)>
+#map2 = affine_map<(d0) -> (d0, 0, 0)>
+#map3 = affine_map<(d0, d1) -> (0, d1, d0)>
+...
+        %2 = affine.apply #map(%arg6)
+        ...
+        %4 = vector.transfer_read %extracted_slice[%c0_6, %c0_6], %3 {permutation_map = #map1} : tensor<32x32xf8E4M3FN>, vector<32x32x32xf8E4M3FN>
+        %6 = vector.transfer_read %extracted_slice_0[%c0_6], %5 {permutation_map = #map2} : tensor<32xf8E8M0FNU>, vector<32x32x32xf8E8M0FNU>
+        %8 = vector.transfer_read %extracted_slice_1[%c0_6, %c0_6], %7 {permutation_map = #map3} : tensor<32x32xf32>, vector<32x32x32xf32>
+        %10 = vector.transfer_read %extracted_slice_2[%c0_6, %c0_6], %9 : tensor<32x32xf32>, vector<32x32xf32>
+        ...
+        %15 = vector.multi_reduction <add>, %14, %10 [2] : vector<32x32x32xf32> to vector<32x32xf32>
+```
+
+The `floordiv` did not leave the program. `#map` on the `affine.apply` still computes the block index once per tile. What changed is that the generic no longer computes it a second time.
+
+Each input is read into a `vector<32x32x32>` spanning the tile's `(m, n, k)` space, and each `permutation_map` says where that operand's own axes land among those three positions. A `0` marks a position the operand does not vary along, so one value covers the whole extent. The mantissa map `(d0, 0, d1)` puts rows at `m` and columns at `k` with a `0` at `n`. The `B` map `(0, d1, d0)` carries its `0` at `m`. The scale map `(d0, 0, 0)` is the only one with two zeros: it varies along `m` alone, so a single read per row serves every position in the tile. That is the access the block format was built for, now stated in the IR.
+
+The last operation reads against it. `vector.multi_reduction <add>, %14, %10 [2]` collapses axis 2, the contraction axis, summing 32 products into each output element. The same axis is broadcast along for the scale and reduced along for the accumulator, which is not a contradiction: the broadcast says where a value comes from, the reduction says where results go.
+
+The `floordiv` could be dropped because tiling had already made it redundant. `%2 = affine.apply #map(%arg6)` evaluates `k floordiv 32` once per tile on the loop counter, and `tensor.extract_slice %arg1[0, %2] [32, 1] [1, 1]` cuts out that block's column. By the time the generic runs, one column is all it has, and inside the tile `d2` ranges over 0 to 31, so `d2 floordiv 32` returns 0 on every iteration and indexes the only column present.
+
+Dropping it is not enough on its own, and the operand has to come along, for reasons that are separate even though both concern the same map. The map's second result, `d2 floordiv 32`, is an arithmetic expression rather than a bare dimension, which is exactly what the vectorizer's precondition rejects. The map also has two results, and `linalg.generic` requires an operand's rank to equal its map's result count, so a one-result map forces a rank-one operand. One constraint is about what a result contains, enforced by the vectorizer; the other is about how many results there are, enforced by the op's own verifier. Change either alone and the op is malformed.
+
+Replacing the arithmetic with a constant does not help either. A map of `(d0, 0)` is no more a projected permutation than `(d0, d2 floordiv 32)`, since a literal is not a bare dimension. While the operand keeps a second axis the map must index it with something, and everything it could index it with fails. Dropping the axis is what lets the map stop mentioning it.
+
+Untiled, the same edit would be a miscompile. There the scale operand is the full `32x2` and `k` sweeps 0 to 63 in one loop. At `k = 5` the map selects scale column 0; at `k = 40` it selects column 1. Those are different numbers, and the result depends on getting the right one. Replace the map with `(d0)` and every iteration reads column 0, so all 32 products in the second half of the reduction are scaled by the first block's factor.
 
 What the pipeline does not have is anything that performs this rewrite on its own.
