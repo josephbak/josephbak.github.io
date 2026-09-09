@@ -216,3 +216,54 @@ Which is the coupling from section 2, arriving from the other side. Rewriting th
 A pattern that would work has to see both halves at once: recognize a `floordiv` on a reduction dimension whose range has been confined to a single block, then rank-reduce the operand and reproject the map together, and only where tiling has already made that projection true. That is a new pattern rather than a strategy flag or a different pass ordering, and a general one, since any block-scaled format lowered this way meets the same wall. It is scoped to a later version of this dialect and left unbuilt here.
 
 What v1 ships is the tiled form. The next question is whether any of it runs.
+
+## Where the f8 conversion stops
+
+Measuring anything means running it, and running it means getting the whole module down to LLVM IR. The pass chain from `linalg` on tensors is long but mostly mechanical: loops, then affine lowering, then control flow, then memref descriptors, then each remaining dialect to LLVM, then a cleanup of leftover cast glue.
+
+One ordering constraint in that chain is not mechanical. `--lower-affine` has to come after `--convert-linalg-to-loops`, and the reason is the `k floordiv 32` scale index. In the bufferized `linalg.generic` that expression lives in an attribute, part of the indexing map, and an attribute is not an operation. It becomes one only when the generic is expanded into loops and the index has to be computed somewhere. Counting `affine.apply` before and after the loop conversion gives zero and then one. Putting `--lower-affine` first would run it against a module where the thing it lowers does not yet exist.
+
+The chain runs to completion on the block matmul. What it produces cannot be translated, and the reason is one leaf conversion.
+
+Two functions through one pipeline show it. Each takes an f8 value as an argument, so nothing folds at compile time, and each widens it to `f32`:
+
+```mlir
+llvm.func @extf_e4m3(%arg0: i8) -> f32 {
+  %0 = builtin.unrealized_conversion_cast %arg0 : i8 to f8E4M3FN
+  %1 = arith.extf %0 : f8E4M3FN to f32
+  llvm.return %1 : f32
+}
+llvm.func @extf_e8m0(%arg0: i8) -> f32 {
+  %0 = llvm.mlir.constant(23 : i32) : i32
+  %1 = llvm.zext %arg0 : i8 to i32
+  %2 = llvm.shl %1, %0 : i32
+  %3 = llvm.mlir.constant(-1 : i8) : i8
+  %4 = llvm.mlir.constant(-1 : i32) : i32
+  %5 = llvm.icmp "eq" %arg0, %3 : i8
+  %6 = llvm.select %5, %4, %2 : i1, i32
+  %7 = llvm.bitcast %6 : i32 to f32
+  llvm.return %7 : f32
+}
+```
+
+The scale conversion is gone, replaced by integer work. `f8E8M0FNU` carries eight exponent bits and no mantissa, so widening it to `f32` is a shift: zero-extend the byte, move it left by 23 into the exponent field, special-case the all-ones encoding to a NaN, and reinterpret the bits. No floating-point instruction appears, because none is needed and none would be available.
+
+The mantissa conversion is still there, spelled exactly as it was written, sitting inside a function that is otherwise LLVM dialect. Above it is an `unrealized_conversion_cast` turning the incoming `i8` back into `f8E4M3FN`. Both signatures converted to `i8`, so the type was handled in both cases. Only one of the two operations was.
+
+That leftover cast is not stray glue. `--reconcile-unrealized-casts` erases casts that pair up around a converted region, and this one has nowhere to pair to: it feeds an operation that never converted, so it stays as a marker of where the lowering ran out.
+
+A CPU has no f8 registers and no f8 arithmetic, so every conversion out of an eight-bit float is either a hardware instruction on a chip that has one, an emulation written in terms of integer operations, or nothing at all. The GPU path takes the first, which is the whole reason MX targets those chips. On CPU the second is the only option, and on this build it existed for the scale type and not for the mantissa type. `--arith-expand` accepts `include-f8e8m0`; `include-f8e4m3fn` is not an option it recognizes, and passing it is an error.
+
+Handing the result to `mlir-translate` ends the attempt:
+
+```
+error: Dialect `arith' not found for custom op 'arith.extf'
+```
+
+The translator registers the LLVM and target dialects and nothing else, so a module still containing an `arith` operation cannot even be parsed, let alone translated. No LLVM IR is produced. The backend never sees the conversion and forms no opinion about it, which is worth stating precisely: this is a diagnosis about where MLIR stops, not a claim about what LLVM would do.
+
+Upstream closed it. Commit `c3c6e286e7eb9`, landed 1 September 2026 by Arun Thangamani, adds `F8E4M3FNExtFOpConverter` and `F8E4M3FNTruncFOpConverter` to the expansion patterns, along with the `f8E5M2` pair, and exposes them as `include-f8e4m3fn` and `include-f8e5m2`. The emulation now exists, in both directions, for exactly the operation that stopped here. It postdates this build by a little over three months.
+
+Rebuilding against it would erase the gap, and it would not produce the number the last part of this post is after. Software-emulated f8 conversion on a CPU measures the cost of the emulation, which is a property of the workaround rather than of the format. The thing worth measuring is how many bytes move, and that does not require running anything.
+
+The two gaps are not the same kind of thing, and the difference matters more than the fact that there were two. The vectorizer refused. A check was in place, it was doing what it was written to do, and getting past it takes a pattern that does not exist yet; it is still open. This one was absent rather than opposed. Nothing declined anything. A conversion had not been written, and then it was.
