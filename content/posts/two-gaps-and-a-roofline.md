@@ -181,7 +181,7 @@ What the pipeline does not have is anything that performs this rewrite on its ow
 
 Upstream ships a pass for removing size-1 dimensions from `linalg` ops, and the scale operand is typed `tensor<32x1xf8E8M0FNU>`. The names line up. Reaching for `--linalg-fold-unit-extent-dims` here is the obvious move, and it was the first thing tried.
 
-There are three ways in: the pass, and two transform ops that expose the same folding with different rank-reduction strategies. The transform version is a short schedule:
+There are three ways to invoke that folding: the pass itself, and two transform ops, `apply_patterns.linalg.fold_unit_extent_dims_via_slices` and `apply_patterns.linalg.fold_unit_extent_dims_via_reshapes`, which differ only in how they rank-reduce. The transform version is a short schedule:
 
 ```mlir
 module attributes {transform.with_named_sequence} {
@@ -196,23 +196,23 @@ module attributes {transform.with_named_sequence} {
 }
 ```
 
-Run against the tiled nest, both transform ops leave it byte-identical. The pass does change something:
+Run against the tiled nest, both transform ops leave it unchanged. The pass does change something:
 
 ```mlir
 %extracted_slice_0 = tensor.extract_slice %arg1[0, %2] [32, 1] [1, 1] : tensor<32x2xf8E8M0FNU> to tensor<32xf8E8M0FNU>
 %expanded = tensor.expand_shape %extracted_slice_0 [[0, 1]] output_shape [32, 1] : tensor<32xf8E8M0FNU> into tensor<32x1xf8E8M0FNU>
 ```
 
-The slice is rank-reduced to `tensor<32>`, then expanded straight back to `tensor<32x1>`, and the generic consumes the expanded value. Two ops where there was one, and the operand reaching the generic has the rank it started with. `#map2` still reads `(d0, d2 floordiv 32)` in all three runs.
+The slice is rank-reduced to `tensor<32>`, then expanded straight back to `tensor<32x1>`, and the generic consumes the expanded value. Two ops where there was one, and the operand reaching the generic has the rank it started with. In all three runs, `#map2` still reads `(d0, d2 floordiv 32)`, so nothing here moved the op closer to vectorizing.
 
-The reason is a mismatch between what the name describes and what the code does. All three entry points call `populateFoldUnitExtentDimsPatterns`, which contributes the `DropUnitDims` pattern. That pattern is looking for iteration dimensions whose trip count is one, so it can delete the loop. It finds them by inverting the concatenated indexing maps to recover which operand axis pins each loop, then checking whether that axis has extent 1. Two things stop it here. The scan accepts only results that are bare dimensions, and the scale's axis is reached through a `floordiv`, so its position is skipped. Past that, the loops it does recover are `m`, `n`, and `k`, all of extent 32 after tiling. Nothing qualifies, the set of droppable dimensions is empty, and `dropUnitDims` returns failure.
+The reason is a mismatch between what the name describes and what the code does. The pass and both transform ops call `populateFoldUnitExtentDimsPatterns`, which contributes the `DropUnitDims` pattern. That pattern is looking for iteration dimensions with a trip count of one, so it can delete the loop. It finds them by inverting the concatenated indexing maps to recover which operand axis pins each loop, then checking whether that axis has extent 1. Two things stop it here. The scan accepts only map results that are bare dimensions, and the scale's axis is reached through a `floordiv`, so its position is skipped. Past that, the loops it does recover are `m`, `n`, and `k`, all of extent 32 after tiling. Nothing qualifies, the set of droppable dimensions comes out empty, and `dropUnitDims` returns failure.
 
-The `1` in `tensor<32x1>` is a unit axis of an operand. The pass removes unit-trip loops. Those coincide often enough that the name is fair, and on this op they come apart.
+The `1` in `tensor<32x1>` is a unit axis on an operand. The pass removes unit-trip loops. Those coincide often enough for the name to be fair, and on this op they come apart.
 
-The pass differs from the transform ops only because it runs a second stage afterward, a set of canonicalizations the transform ops never reach. One of them normalizes any `extract_slice` carrying a unit dimension into a rank-reduced slice followed by a reassociative reshape, which is the pair above. That pattern matches on the slice alone. It has no view of the generic downstream, so it cannot know an indexing map would have to change, and no standing to change one. It does the half it can see, and the other half restores the rank the unchanged map still demands.
+The pass differs from the two transform ops only because it runs a second stage afterward, a set of canonicalizations the transform ops never reach. One of them normalizes any `extract_slice` carrying a unit dimension into a rank-reduced slice followed by a reassociative reshape, which is the pair above. That pattern matches on the slice alone. It has no view of the generic downstream, so it cannot know an indexing map would have to change, and has no standing to change one. It does the half it can see, and the reshape restores the rank that the untouched two-result map still requires.
 
-Which is the same coupling from the other direction. An operand rewrite without a map rewrite is not a partial fix; it is no fix, undone on the next line.
+Which is the coupling from section 2, arriving from the other side. Rewriting the operand without rewriting the map is not a partial fix. It is no fix, undone on the next line.
 
-A pattern that would work has to see both at once: recognize a `floordiv` on a reduction dimension whose range has been confined to a single block, then rank-reduce the operand and reproject the map together, and only where tiling has already made that projection true. That is a new pattern, not a strategy flag or a different pass ordering, and it is a general one, since any block-scaled format lowered this way meets the same wall. It is scoped to a later version of this dialect and left unbuilt here.
+A pattern that would work has to see both halves at once: recognize a `floordiv` on a reduction dimension whose range has been confined to a single block, then rank-reduce the operand and reproject the map together, and only where tiling has already made that projection true. That is a new pattern rather than a strategy flag or a different pass ordering, and a general one, since any block-scaled format lowered this way meets the same wall. It is scoped to a later version of this dialect and left unbuilt here.
 
-So the tiled form ships unvectorized, and the pipeline moves on to code generation.
+What v1 ships is the tiled form. The next question is whether any of it runs.
