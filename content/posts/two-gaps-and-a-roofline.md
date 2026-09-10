@@ -55,11 +55,11 @@ The tile sizes are `[0, 32, 32]` over the iteration space `(m, n, k)`. `M` is no
 
 The schedule is loaded by `mlir-opt` rather than `mx-opt`, which registers neither the Transform dialect nor its Linalg extension. No `mx` ops survive `--mx-to-linalg`, so the second tool sees only upstream dialects.
 
-```
-mx-opt test/MX/lower-matmul.mlir --mx-to-linalg \
-  | mlir-opt --transform-preload-library='transform-library-paths=test/MX/schedule.mlir' \
-             --transform-interpreter
-```
+~~~
+$ mx-opt lower-matmul.mlir --mx-to-linalg \
+    | mlir-opt --transform-preload-library='transform-library-paths=schedule.mlir' \
+               --transform-interpreter
+~~~
 
 That produces the loop nest (payload elided; tiling leaves it unchanged):
 
@@ -219,17 +219,28 @@ What v1 ships is the tiled form. The next question is whether any of it runs.
 
 ## Where the f8 conversion stops
 
-Measuring anything means running it, and running it means getting the module down to LLVM IR. The pass chain from `linalg` on tensors is long: loops, affine lowering, control flow, memref descriptors, then each remaining dialect to LLVM. Most of it is mechanical.
+Measuring anything means running it, and running it means getting the module down to LLVM IR. Two things stood between the bufferized dialect and a running binary: one pass ordering that is not arbitrary, and one conversion that had no implementation.
 
-One step in that chain has to go in a particular place, and the reason is the block scale. In the bufferized `linalg.generic`, the expression `k floordiv 32` lives inside the indexing map, which is an attribute on the op rather than an operation in its own right. Nothing computes it yet, because the generic has no explicit loops and no explicit index arithmetic. `--convert-linalg-to-loops` changes that: expanding the generic into `scf.for` means every index has to be computed somewhere concrete, and the scale's block index appears as an `affine.apply`. Counting them in the bufferized module gives zero, and counting them after the loop conversion gives one.
+The ordering first. Most of the chain is mechanical, but two steps have to go in a fixed relative order, and the reason is the block scale:
 
-That is what fixes the order. `--lower-affine` is the pass that turns `affine.apply` into ordinary arithmetic, and it can only do that once one exists. Run it before the loop conversion and it walks a module where the block index is still a subexpression inside an attribute, finds nothing to lower, and reports success. The failure would surface much later, as unlowered affine ops reaching a stage that cannot handle them, which is a far worse place to debug it. The constraint reads like an ordering detail and is really a consequence of where the scale index is written down.
+~~~
+  ...
+  --convert-linalg-to-loops
+  --lower-affine
+  ...
+~~~
 
-The chain runs to completion on the block matmul. What comes out cannot be translated, and it comes down to one leaf conversion.
+In the bufferized `linalg.generic`, the expression `k floordiv 32` sits inside the indexing map. A map is an attribute on the op, a piece of compile-time data describing how operands are read, and nothing in the module computes it. The generic has no explicit loops and no explicit index arithmetic; the indices are implied by the maps. `--convert-linalg-to-loops` changes that. Expanding the generic into `scf.for` means every index now has to be computed by some operation, and the scale's block index appears as an `affine.apply`, an op that evaluates an affine map on index values and yields an index. Counting them in the bufferized module gives zero. Counting them after the loop conversion gives one.
 
-A small probe isolates it. Two functions, each taking an eight-bit float as an argument so that nothing folds away at compile time, each widening it to `f32`:
+`--lower-affine` is the pass that turns `affine.apply` into ordinary arithmetic, so it can only run once one exists. Placed earlier it would walk a module where the block index is still a subexpression inside an attribute, find nothing to lower, and report success. The failure would surface much later, as an unlowered affine op arriving at a stage that cannot handle it. The constraint looks like pass-ordering trivia and comes directly from a decision made several stages earlier: put the block index in an affine map, and the pass that lowers affine ops has to wait until something materializes it.
 
-```mlir
+With that settled the chain runs to completion. What comes out still cannot be translated, and it comes down to one leaf conversion.
+
+A small probe isolates it. `probe-f8-extf.mlir` holds two functions, each taking an
+eight-bit float as an argument (which avoids compile-time folding), each widening it
+to `f32`:
+
+~~~mlir
 func.func @extf_e4m3(%x: f8E4M3FN) -> f32 {
   %0 = arith.extf %x : f8E4M3FN to f32
   return %0 : f32
@@ -238,17 +249,24 @@ func.func @extf_e8m0(%y: f8E8M0FNU) -> f32 {
   %0 = arith.extf %y : f8E8M0FNU to f32
   return %0 : f32
 }
-```
+~~~
 
-Through the arithmetic end of the same pipeline:
+The obvious thing to reach for does not exist here:
 
-```
-mx-opt test/MX/probe-f8-extf.mlir \
-  --arith-expand="include-f8e8m0=true" \
-  --convert-arith-to-llvm --convert-func-to-llvm --reconcile-unrealized-casts
-```
+~~~
+$ mx-opt probe-f8-extf.mlir --arith-expand="include-f8e4m3fn=true"
+error: <Pass-Options-Parser>: no such option include-f8e4m3fn
+~~~
 
-```mlir
+Its counterpart for the scale type does:
+
+~~~
+$ mx-opt probe-f8-extf.mlir \
+    --arith-expand="include-f8e8m0=true" \
+    --convert-arith-to-llvm --convert-func-to-llvm --reconcile-unrealized-casts
+~~~
+
+~~~mlir
 llvm.func @extf_e4m3(%arg0: i8) -> f32 {
   %0 = builtin.unrealized_conversion_cast %arg0 : i8 to f8E4M3FN
   %1 = arith.extf %0 : f8E4M3FN to f32
@@ -262,20 +280,22 @@ llvm.func @extf_e8m0(%arg0: i8) -> f32 {
   %7 = llvm.bitcast %6 : i32 to f32
   llvm.return %7 : f32
 }
-```
+~~~
 
-The scale conversion is gone, rewritten as integer work on the byte. The mantissa conversion is still there, spelled exactly as it was written, inside a function that is otherwise LLVM dialect. Above it sits a cast turning the incoming `i8` back into `f8E4M3FN`, which survived the cleanup pass because the operation it feeds never converted.
+The scale conversion is gone, rewritten as integer work on the byte. The mantissa conversion is still there, spelled exactly as it was written, inside a function that is otherwise LLVM dialect. Above it sits a cast turning the incoming `i8` back into `f8E4M3FN`, left behind because the operation it feeds never converted.
 
-Both signatures became `i8`, so both types were handled. Only one of the two operations was. A CPU has no eight-bit float registers and no eight-bit float arithmetic, so a conversion like this has to be emulated in terms of integer operations, and something has to supply that emulation. For `f8E8M0FNU`, `--arith-expand` does, under `include-f8e8m0`. For `f8E4M3FN` on this build, nothing did: `include-f8e4m3fn` is not an option the pass recognizes, and passing it is an error.
+Both signatures became `i8`, so both types were handled. Only one of the two operations was. A CPU has no eight-bit float registers and no eight-bit float arithmetic, so a conversion like this has to be emulated with integer operations, and some pass has to supply that emulation. For `f8E8M0FNU`, `--arith-expand` does. For `f8E4M3FN` on this build, nothing did.
 
 Handing the result to `mlir-translate` ends the attempt, and not subtly:
 
-```
+~~~
 error: Dialect `arith' not found for custom op 'arith.extf'
-```
+~~~
 
-The translator registers the LLVM and target dialects only, so a module still carrying an `arith` operation cannot be parsed at all. No LLVM IR comes out, and the backend never sees the conversion. Whatever LLVM might have done with it is a question this never reaches.
+The translator registers the LLVM and target dialects only, so a module still carrying an `arith` operation cannot be parsed at all. No LLVM IR comes out, and the backend never sees the conversion. Whatever it might have done with it is a question this never reaches.
 
-Upstream has since closed the gap. Commit `c3c6e286e7eb9`, from Arun Thangamani on 1 September 2026, adds the missing expansion for `f8E4M3FN` in both directions and exposes it as `include-f8e4m3fn`. It landed a little over three months after the build this post is pinned to.
+Upstream has since closed the gap. Commit `c3c6e286e7eb9`, landed 1 September 2026, adds the missing expansion for `f8E4M3FN` in both directions and exposes it as `include-f8e4m3fn`. That is a little over three months after the build this post is pinned to.
 
 So the two gaps are not the same kind of thing. The vectorizer refused: a check was in place, doing what it was written to do, and getting past it needs a pattern nobody has written. It is still open. This one was not a refusal. The conversion had simply not been written yet, and then someone wrote it.
+
+That does not restore the measurement. An emulated conversion is a sequence of integer operations standing in for hardware that is not present, and timing it measures the stand-in. What the format actually changes is how many bytes move, and that can be counted without running anything.
