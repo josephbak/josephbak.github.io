@@ -34,7 +34,9 @@ tags = ["mlir", "compilers", "quantization", "vectorization"]
 
 Everything below is written against `llvm-project` at revision `6f92180` (2026-05-19), the commit this dialect builds on. Where upstream has since changed behavior this post depends on, the change is noted where it comes up.
 
-Three things sit between a lowering that verifies and a number worth reporting: a vectorizer, a path to executable code, and a roofline. On this pipeline each of them reported something other than what it appeared to.
+<!-- Three things sit between a lowering that verifies and a number worth reporting: a vectorizer, a path to executable code, and a roofline. Each of them stopped this pipeline, for a different reason. -->
+
+Two upstream gaps stood between a lowering that verifies and running code, and the number that came out the other side needed taking apart before it meant anything.
 
 The schedule that tiles is short. It is Transform-dialect IR, data rather than compiled code, loaded into the pipeline and interpreted:
 
@@ -368,3 +370,15 @@ Where that extra arithmetic comes from is worth naming, because it is not inhere
 So neither shape comes out faster. At `M=32` the mx path takes 1.5× as long; at `M=1` the two are level. That is the honest state of `A`-only quantization with `B` and the accumulator still in `f32`: the format cost is paid on every point and the byte saving is too small to repay it. What v1 establishes is the lowering and the byte accounting, neither of which cares which operand carries the format. Quantizing `B` is what moves the decode point. Under the same byte arithmetic, quantizing both operands at `M=1` takes the working set from 16,896 bytes to 4,546 and the modelled time from 141 ns to 38 ns, still memory-bound, so the time ratio and the byte ratio are the same 3.7×. v1 does not quantize `B`, so that is a projection from the type information rather than a result.
 
 One caveat about the roof. Because the peak arithmetic rate is reverse-engineered rather than published, the ridge is drawn as a band rather than a line, and the modelled durations inherit that uncertainty. The intensity values do not depend on it at all, since they come from the type information alone.
+
+## What the diagnosis bought
+
+The dialect lowered, bufferized, and tiled without incident. Then the vectorizer refused the scale map, the folding pass that looked like the fix turned out to be solving a different problem, the f8 conversion had no implementation on the CPU path, and the intensity number at the end folded a saving and an overhead into one figure.
+
+Both gaps were real on `llvm-project` at `6f92180`. One has since been filled: `arith-expand` gained the `f8E4M3FN` expansion on 1 September 2026, so a build from today lowers what this one could not. The other is open at HEAD. The pattern that would close it recognizes a `floordiv` confined to a single block and rewrites the operand and the map together, and it has not been written. It is general rather than specific to this dialect: any block-scaled format lowered through an affine map meets the same wall.
+
+What v1 has is the lowering and the byte accounting. Four ops, a parameterized type, three canonicalizations, a conversion to `linalg` on tensors, a 1:N split that bufferizes copy-free, and a tiled schedule whose block-aligned `K` makes the broadcast form reachable. The byte model built on that works from types and shapes, so it can price a change the code does not implement, which is how a quantized `B` gets a number here without existing.
+
+What v1 does not have is a speedup. At `M=32` the mx path takes 1.5× as long, and at `M=1` the two are level. Quantizing `A` pays at neither shape, because at `M=32` arithmetic binds and at `M=1` `A` is a rounding error against `B`. A second version would quantize `B`, build the vectorization pattern, and measure on a build with the f8 expansion.
+
+The series followed one pipeline down. [Post 1](@/posts/designing-mx-dialect.md) put a block scale into a type. [Post 2](@/posts/canonicalization-e8m0-power-of-two.md) found the power-of-two structure in the scale format and what it makes exact. [Post 3](@/posts/lowering-mx-block-matmul.md) reduced block-scaled matmul to one `floordiv` in one affine map. [Post 4](@/posts/bufferizing-block-scaled-types.md) split one value into two buffers and accumulated in place. This post took all of it to the last stage, where two upstream gaps stopped the pipeline and the number at the end came from the types rather than from a run.
