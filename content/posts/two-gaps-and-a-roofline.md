@@ -2,7 +2,7 @@
 title = "5 - Two Gaps and a Roofline: Executing an MX Dialect End-to-End"
 description = "Driving a block-scaled dialect to running code: a vectorizer that reads syntax instead of values, an f8 conversion with no CPU path, and a roofline number that rises for two different reasons."
 slug = "two-gaps-and-a-roofline"
-date = 2026-09-07
+date = 2026-09-14
 weight = 5
 draft = true
 [taxonomies]
@@ -381,4 +381,4 @@ What v1 has is the lowering and the byte accounting. Four ops, a parameterized t
 
 What v1 does not have is a speedup. At `M=32` the mx path takes 1.5× as long, and at `M=1` the two are level. Quantizing `A` pays at neither shape, because at `M=32` arithmetic binds and at `M=1` `A` is a rounding error against `B`. A second version would quantize `B`, build the vectorization pattern, and measure on a build with the f8 expansion.
 
-The series followed one pipeline down. [Post 1](@/posts/designing-mx-dialect.md) put a block scale into a type. [Post 2](@/posts/canonicalization-e8m0-power-of-two.md) found the power-of-two structure in the scale format and what it makes exact. [Post 3](@/posts/lowering-mx-block-matmul.md) reduced block-scaled matmul to one `floordiv` in one affine map. [Post 4](@/posts/bufferizing-block-scaled-types.md) split one value into two buffers and accumulated in place. This post took all of it to the last stage, where two upstream gaps stopped the pipeline and the number at the end came from the types rather than from a run.
+The series worked down one pipeline, a stage per post. [Post 1](@/posts/designing-mx-dialect.md) put a block scale into a type. [Post 2](@/posts/canonicalization-e8m0-power-of-two.md) found the power-of-two structure in the scale format and what it makes exact. [Post 3](@/posts/lowering-mx-block-matmul.md) reduced block-scaled matmul to one `floordiv` in one affine map. [Post 4](@/posts/bufferizing-block-scaled-types.md) split one value into two buffers and accumulated in place. This post took all of it to the last stage, where two upstream gaps stopped the pipeline and the number at the end was computed rather than measured.
