@@ -32,11 +32,9 @@ tags = ["mlir", "compilers", "quantization", "vectorization"]
 
 [Post 3](@/posts/lowering-mx-block-matmul.md) ended owing an answer. The scale operand's indexing map, `(d0, d2 floordiv 32)`, cleared `linalg.generic`'s verifier, which asks only whether the operands' maps taken together recover the iteration space. The structured vectorizer asks a stricter question of every map on its own, and the same `floordiv` fails it. Choosing a generic did not clear that bar. It postponed it, and this is where it comes due.
 
-Everything below is written against `llvm-project` at revision `6f92180` (2026-05-19), the commit this dialect builds on. Where upstream has since changed behavior this post depends on, the change is noted where it comes up.
+That is the first of two gaps between a lowering that verifies and code that runs. The second stops the pipeline before it reaches LLVM IR. Neither says what is wrong. The number at the end rises for two reasons, and only one of them is a win.
 
-<!-- Three things sit between a lowering that verifies and a number worth reporting: a vectorizer, a path to executable code, and a roofline. Each of them stopped this pipeline, for a different reason. -->
-
-Two upstream gaps stood between a lowering that verifies and running code, and the number that came out the other side needed taking apart before it meant anything.
+Everything below is written against `llvm-project` at revision `6f92180` (2026-05-19), the commit this dialect builds on. Where upstream has since changed something this post relies on, the change is noted at that point.
 
 The schedule that tiles is short. It is Transform-dialect IR, data rather than compiled code, loaded into the pipeline and interpreted:
 
@@ -55,13 +53,13 @@ module attributes {transform.with_named_sequence} {
 
 The tile sizes are `[0, 32, 32]` over the iteration space `(m, n, k)`. `M` is not tiled: it is already 32, and tiling it would produce a single-trip loop. `N` and `K` are tiled by 32, and the size on `K` is the one that matters. A `K` tile equal to the block size keeps each tile inside one MX block, so the block index is fixed for the whole tile.
 
-The schedule is loaded by `mlir-opt` rather than `mx-opt`, which registers neither the Transform dialect nor its Linalg extension. No `mx` ops survive `--mx-to-linalg`, so the second tool sees only upstream dialects.
+The schedule is loaded by `mlir-opt` rather than `mx-opt`. Both are pass drivers, but `mx-opt` is this project's own, and it registers only the dialects the project needs, which does not include the Transform dialect or its Linalg extension. No `mx` ops survive `--mx-to-linalg`, so the second tool sees only upstream dialects.
 
-~~~
+```
 $ mx-opt lower-matmul.mlir --mx-to-linalg \
     | mlir-opt --transform-preload-library='transform-library-paths=schedule.mlir' \
                --transform-interpreter
-~~~
+```
 
 That produces the loop nest (payload elided; tiling leaves it unchanged):
 
@@ -87,15 +85,15 @@ Two lines in that nest are why the `K` tile is the block size:
 %extracted_slice_3 = tensor.extract_slice %arg1[0, %2] [32, 1] [1, 1] : tensor<32x2xf8E8M0FNU> to tensor<32x1xf8E8M0FNU>
 ```
 
-`#map` is `(d0) -> (d0 floordiv 32)`, so `%2` is the block index, computed once per tile from the tile's induction variable `%arg6` and hoisted above the generic. `%extracted_slice_3` uses it to take a `[32, 1]` window of the scale, one block-column, and hands the generic a `tensor<32x1xf8E8M0FNU>`. Inside the tile the reduction runs over 32 contraction positions that all belong to one block, so the scale each row needs is a single value, constant for the entire reduction. That is precisely the condition a vector broadcast wants.
+`#map` is `(d0) -> (d0 floordiv 32)`, so `%2` is the block index, computed once per tile from `%arg6`, the loop counter of the enclosing `scf.for`, and hoisted above the generic. `%extracted_slice_3` uses it to take a `[32, 1]` window of the scale, one block-column, and hands the generic a `tensor<32x1xf8E8M0FNU>`. Inside the tile the reduction runs over 32 contraction positions that all belong to one block, so the scale each row needs is a single value, constant for the entire reduction.
 
-Adding `transform.structured.vectorize %tiled` to the schedule, so that vectorization runs on the handle tiling returned rather than on a fresh match, gives:
+This is the point at which the tiled form should vectorize. Adding `transform.structured.vectorize %tiled` to the schedule, so that vectorization runs on the handle tiling returned rather than on a fresh match, gives:
 
 ```
-error: Attempted to vectorize, but failed
+<stdin>:7:10: error: Attempted to vectorize, but failed
 ```
 
-The message names no cause, and its location is misleading: it points at line 7 of the input, the untiled generic, because the tiled op inherits the location of the op it was built from. The vectorizer's own debug output says what happened:
+The message names no cause, and its location is misleading: it points at line 7 of the input, the untiled generic, because the tiled op inherits the location of the op it was built from. Re-running with `--debug-only=linalg-vectorization` says what happened:
 
 ```
 [linalg-vectorization Vectorization.cpp:2537] Attempting to vectorize: %3 = linalg.generic
@@ -107,13 +105,13 @@ The message names no cause, and its location is misleading: it points at line 7 
 [linalg-vectorization Vectorization.cpp:2545] Vectorization pre-conditions failed
 ```
 
-The shapes in the first line are `32x32` and `32x1`, so the op under consideration is the tiled one, not the original. The gate is `allIndexingsAreProjectedPermutation`, called from `vectorizeLinalgOpPrecondition` before any vectorization work begins. It requires every indexing map on the op to be a projected permutation: each result a bare iteration dimension, carried through untouched. Three of the four maps qualify. `(d0, d2 floordiv 32)` performs a division on `d2`, and one failing map fails the op.
+The operand types in that dump are `32x32` and `32x1`, so the op under consideration is the tiled one, not the original. The gate is `allIndexingsAreProjectedPermutation`, called from `vectorizeLinalgOpPrecondition` before any vectorization work begins. It requires every indexing map on the op to be a projected permutation: each result a bare iteration dimension, carried through untouched. Three of the four maps qualify. `(d0, d2 floordiv 32)` performs a division on `d2`, and one map is enough to reject the op.
 
-What tiling changed and what it did not is the point. It changed the scale's behavior: the value is now fixed across the tile's reduction, and the block index has been lifted out into an `affine.apply` above the loop body. It did not change a character of the map, which still reads `d2 floordiv 32`. The precondition inspects the map's expression, so it sees the division and stops. Nothing in an affine expression records that `d2` now ranges over 32 values instead of 64, and no check that reads the expression could discover it.
+What tiling changed and what it did not is the point. It changed the scale's behavior: the value is now fixed across the tile's reduction, and the block index has been lifted into an `affine.apply` above the loop body. It did not change a character of the map, which still reads `d2 floordiv 32`. The precondition inspects the map's expression, so it sees the division and stops. An affine map stores an expression, not the range its dimensions take, so nothing in it records that `d2` now runs to 32 instead of 64.
 
-The requirement is a stand-in for the question that matters, which is whether each operand's access can become a uniform vector load or broadcast. Untiled, the two agree: the scale genuinely changes partway through the reduction, there is no single value to broadcast, and refusing is right. Tiled, they come apart. The access is exactly a broadcast, and the map is exactly as non-projective as before.
+Untiled, the same refusal is the right call. The scale changes partway through the reduction, lanes covering `k = 31` and `k = 32` need different values, and there is nothing to broadcast. Tiling is what makes the access uniform, and the map is the same either way.
 
-So the access is not unvectorizable. It is unvectorizable as written.
+The access is not unvectorizable. It is unvectorizable as written.
 
 ## What the map would have to become
 
