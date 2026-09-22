@@ -169,43 +169,30 @@ Untiled, either version would be a miscompile. The scale operand is the full `32
 
 What the pipeline does not have is anything that performs this rewrite on its own.
 
-## The fold that looks like the answer
+## The range the verifier already knows
 
-Upstream ships a pass for removing size-1 dimensions from `linalg` ops, and the scale operand is typed `tensor<32x1xf8E8M0FNU>`. The names line up. Reaching for `--linalg-fold-unit-extent-dims` here is the obvious move, and it was the first thing tried.
+The one-line edit was made by hand. Whether anything upstream makes it is a question for the tiled nest as the schedule emitted it, `floordiv` and all. Every pass registered in `mlir-opt` at this revision was tried on that nest, one at a time. Of those that accept it, none rewrites the scale map (the one whose output lacks it, `--sparsifier`, lowers the generic away entirely). Neither transform op that exposes unit-dim folding, `apply_patterns.linalg.fold_unit_extent_dims_via_slices` or `apply_patterns.linalg.fold_unit_extent_dims_via_reshapes`, changes the nest. No test under `mlir/test/Dialect/Linalg` starts from a `linalg` map containing a `floordiv`.
 
-There are three ways to invoke that folding: the pass itself, and two transform ops, `apply_patterns.linalg.fold_unit_extent_dims_via_slices` and `apply_patterns.linalg.fold_unit_extent_dims_via_reshapes`, which differ only in how they rank-reduce. The transform version is a short schedule:
-
-```mlir
-module attributes {transform.with_named_sequence} {
-  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
-    %f = transform.structured.match ops{["func.func"]} in %root
-      : (!transform.any_op) -> !transform.any_op
-    transform.apply_patterns to %f {
-      transform.apply_patterns.linalg.fold_unit_extent_dims_via_slices
-    } : !transform.any_op
-    transform.yield
-  }
-}
-```
-
-Run against the tiled nest, both transform ops leave it unchanged. The pass does change something:
+The candidate that should have caught it is unit-dim folding. The `1` in `tensor<32x1xf8E8M0FNU>` is why `0` is the only valid index, and `--linalg-fold-unit-extent-dims` exists to remove size-1 axes from `linalg` ops. It does touch the scale operand:
 
 ```mlir
 %extracted_slice_0 = tensor.extract_slice %arg1[0, %2] [32, 1] [1, 1] : tensor<32x2xf8E8M0FNU> to tensor<32xf8E8M0FNU>
 %expanded = tensor.expand_shape %extracted_slice_0 [[0, 1]] output_shape [32, 1] : tensor<32xf8E8M0FNU> into tensor<32x1xf8E8M0FNU>
 ```
 
-The slice is rank-reduced to `tensor<32>`, then expanded straight back to `tensor<32x1>`, and the generic consumes the expanded value. Two ops where there was one, and the operand reaching the generic has the rank it started with. In all three runs, `#map2` still reads `(d0, d2 floordiv 32)`, so nothing here moved the op closer to vectorizing.
+The slice is rank-reduced to `tensor<32>` and expanded straight back to `tensor<32x1>`. A cleanup stage in the pass rewrites the slice without looking at the generic that consumes it, and the unchanged two-result map still needs the second axis, so the reshape puts it back.
 
-The reason is a mismatch between what the name describes and what the code does. The pass and both transform ops call `populateFoldUnitExtentDimsPatterns`, which contributes the `DropUnitDims` pattern. That pattern is looking for iteration dimensions with a trip count of one, so it can delete the loop. It finds them by inverting the concatenated indexing maps to recover which operand axis pins each loop, then checking whether that axis has extent 1. Two things stop it here. The scan accepts only map results that are bare dimensions, and the scale's axis is reached through a `floordiv`, so its position is skipped. Past that, the loops it does recover are `m`, `n`, and `k`, all of extent 32 after tiling. Nothing qualifies, the set of droppable dimensions comes out empty, and `dropUnitDims` returns failure.
+The map is left alone because of how the pass decides an axis can go. Its `isUnitDim` check accepts a size-1 axis only when the map indexes it with a loop dimension the pass is also removing, or with an expression that becomes the constant 0 once those dimensions are set to 0. Every loop in the tile has extent 32, so nothing is removed and `d2 floordiv 32` stays an expression. The check recognizes a zero it can reach by substitution, not one that follows from a range. Hand the same pass the edited map, with its literal `0`, and it removes the axis and rewrites the map to `(d0)` over `tensor<32xf8E8M0FNU>`.
 
-The `1` in `tensor<32x1>` is a unit axis on an operand. The pass removes unit-trip loops. Those coincide often enough for the name to be fair, and on this op they come apart.
+The information the rewrite needs is already in the op, and the verifier already reads it. An affine map does not record the range its dimensions take, but the operands' shapes do. The verifier behind `IndexingMapOpInterface` inverts the indexing maps to recover each loop's extent from those shapes, the same inversion that let the `floordiv` through in [Post 3](@/posts/lowering-mx-block-matmul.md), then evaluates every map result at the first and last iteration and checks it against the operand's size. For `d2 floordiv 32` both ends come out 0, and a division that never decreases as `d2` grows cannot be anything else in between. Change the divisor to 16, so the last iteration asks for a second column, and the op no longer verifies:
 
-The pass differs from the two transform ops only because it runs a second stage afterward, a set of canonicalizations the transform ops never reach. One of them normalizes any `extract_slice` carrying a unit dimension into a rank-reduced slice followed by a reassociative reshape, which is the pair above. That pattern matches on the slice alone. It has no view of the generic downstream, so it cannot know an indexing map would have to change, and has no standing to change one. It does the half it can see, and the reshape restores the rank that the untouched two-result map still requires.
+```
+probe-oob.mlir:21:14: error: 'linalg.generic' op inferred input/output operand #1 has shape's dimension #1 to be greater than or equal to 2, but found 1
+```
 
-Which is the coupling from section 2, arriving from the other side. Rewriting the operand without rewriting the map is not a partial fix. It is no fix, undone on the next line.
+The verifier works out that the index is always 0 and uses it to accept the op. None of the passes tried uses it to simplify the map.
 
-A pattern that would work has to see both halves at once: recognize a `floordiv` on a reduction dimension whose range has been confined to a single block, then rank-reduce the operand and reproject the map together, and only where tiling has already made that projection true. That is a new pattern rather than a strategy flag or a different pass ordering, and a general one, since any block-scaled format lowered this way meets the same wall. It is scoped to a later version of this dialect and left unbuilt here.
+What is missing is a rewrite that asks the verifier's question and keeps the answer: evaluate each map result that is not a bare dimension at both ends of the static loop ranges, and where the expression only grows or only shrinks with its dimensions and both ends agree, replace it with that constant. On the untiled op the ends are 0 and 1, so it leaves the map alone, which is exactly the recognition the edit required. After that one step, the vectorizer accepts the map and unit-dim folding tidies it into `(d0)`. Nothing in the rewrite is specific to block scales. It is scoped to a later version of this dialect and left unbuilt here.
 
 What v1 ships is the tiled form. The next question is whether any of it runs.
 
