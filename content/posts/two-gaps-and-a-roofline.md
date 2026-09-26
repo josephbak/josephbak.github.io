@@ -173,11 +173,11 @@ What the pipeline does not have is anything that performs this rewrite on its ow
 
 The one-line edit was made by hand. Whether anything upstream makes it is a question for the tiled nest as the schedule emitted it, with `d2 floordiv 32` still in the scale map. Every pass registered in `mlir-opt` at this revision was tried on that nest, one at a time. Of those that accept it, none rewrites the scale map. The two transform ops that expose the same folding patterns leave it unchanged. No test under `mlir/test/Dialect/Linalg` starts from a `linalg` map containing a `floordiv`.
 
-The candidate that should have caught it is unit-dim folding. The `1` in `tensor<32x1xf8E8M0FNU>` is why the column index can only ever be 0, and `--linalg-fold-unit-extent-dims` exists to remove size-1 axes from `linalg` ops. It is not inert on this operand: it rank-reduces the scale slice and then expands it straight back, since the map still has two results. The map is the part it leaves alone.
+The candidate that should have caught it is unit-dim folding. The `1` in `tensor<32x1xf8E8M0FNU>` is why the column index can only ever be 0, and `--linalg-fold-unit-extent-dims` exists to remove size-1 axes from `linalg` ops. It is not inert on this operand: it rank-reduces the scale slice to `tensor<32>` and then expands it straight back to `tensor<32x1>`, because a map needs one result per axis and the generic's scale map still has two. What it never edits is the map.
 
-The reason is how it decides an axis can go. Its `isUnitDim` check clears a size-1 axis for removal only if the index into it is the constant 0, either written that way or becoming 0 once every loop that runs just once is set to 0. Every loop in the tile runs 32 times, so nothing is substituted and the test is simply whether the index is written as `0`. `d2 floordiv 32` is not, and the check has no way to see a zero that holds only because `d2` stops at 31. Hand the same pass the edited map, with its literal `0`, and it removes the axis and rewrites the map to `(d0)` over `tensor<32xf8E8M0FNU>`.
+The reason is how it decides an axis can go. Its `isUnitDim` check clears a size-1 axis for removal only when the index into it is the constant 0: either written as `0`, or reducing to `0` after the loops being dropped, those with a single iteration, are replaced by zero. Every loop in the tile runs 32 times, so no loop is dropped and nothing is substituted; the test comes down to whether the index is written as `0`. `d2 floordiv 32` is not, and the check has no way to see a zero that holds only because `d2` stops at 31. Hand the same pass the edited map, with its literal `0`, and it removes the axis and rewrites the map to `(d0)` over `tensor<32xf8E8M0FNU>`.
 
-The fact the edit relies on is already in the op, and the verifier computes it. The map says which column to read for a given `d2`, not how far `d2` goes; the operands do. The mantissa slice is 32 columns wide and read at column `d2`, so `d2` stops at 31. The verifier behind `IndexingMapOpInterface` inverts the indexing maps to recover how many times each loop runs, the same whole-system inversion that let the `floordiv` through in [Post 3](@/posts/lowering-mx-block-matmul.md). It then evaluates every map result at the first and last iteration and checks it against the operand's size. For `d2 floordiv 32` both ends come out 0, and a division that never decreases as `d2` grows cannot be anything else in between. Change the divisor to 16, so the last iteration asks for a second column, and the op no longer verifies:
+The fact the edit relies on is already in the op, and the verifier computes it. The map says which column to read for a given `d2`, not how far `d2` goes; the operands do. The mantissa slice is 32 columns wide and read at column `d2`, so `d2` stops at 31. The verifier behind `IndexingMapOpInterface` inverts the indexing maps taken together to recover how many times each loop runs, the same whole-system inversion that let the `floordiv` through in [Post 3](@/posts/lowering-mx-block-matmul.md). It then evaluates every map result at the first and last iteration and checks it against the operand's size. For `d2 floordiv 32` both ends come out 0, and a division that never decreases as `d2` grows cannot be anything else in between. Change the divisor to 16, so the last iteration asks for a second column, and the op no longer verifies:
 
 ```
 probe-oob.mlir:21:14: error: 'linalg.generic' op inferred input/output operand #1 has shape's dimension #1 to be greater than or equal to 2, but found 1
@@ -185,7 +185,7 @@ probe-oob.mlir:21:14: error: 'linalg.generic' op inferred input/output operand #
 
 The verifier works out that the index is always 0 and uses it to accept the op. None of the passes tried uses it to simplify the map.
 
-What is missing is a rewrite that asks the verifier's question and keeps the answer. It would evaluate each map result that is not a bare dimension at the first and last iteration of the loops the operand shapes imply, and replace the result with a constant wherever both ends agree and the expression only grows or only shrinks with its dimensions. On the untiled op the ends are 0 and 1, so it leaves the map alone, which is the recognition the edit required. Nothing in it is specific to block scales. It is scoped to a later version of this dialect and left unbuilt here.
+What is missing is a rewrite that asks the verifier's question and keeps the answer. It would evaluate each map result that is not a bare dimension at the first and last iteration of the loops the operand shapes imply, and replace the result with that constant wherever both ends agree and the expression moves in one direction as its dimensions grow. On the untiled op the ends are 0 and 1, so it leaves the map alone, which is the recognition the edit required. The rewrite is not specific to block scales: any map result pinned to a constant by the loop it sits in qualifies. Building it belongs to a later version of this dialect.
 
 What v1 ships is the tiled form. The next question is whether any of it runs.
 
@@ -202,15 +202,13 @@ The ordering first. Most of the chain is mechanical, but two steps have to go in
   ...
 ~~~
 
-In the bufferized `linalg.generic`, the expression `k floordiv 32` sits inside the indexing map. A map is an attribute on the op, a piece of compile-time data describing how operands are read, and nothing in the module computes it. The generic has no explicit loops and no explicit index arithmetic; the indices are implied by the maps. `--convert-linalg-to-loops` changes that. Expanding the generic into `scf.for` means every index now has to be computed by some operation, and the scale's block index appears as an `affine.apply`, an op that evaluates an affine map on index values and yields an index. Counting them in the bufferized module gives zero. Counting them after the loop conversion gives one.
+In the bufferized `linalg.generic`, the expression `d2 floordiv 32` sits inside the indexing map. A map is an attribute on the op, a piece of compile-time data describing how operands are read, and nothing in the module computes it. The generic has no explicit loops and no explicit index arithmetic; the indices are implied by the maps. `--convert-linalg-to-loops` changes that. Expanding the generic into `scf.for` means every index now has to be computed by some operation, and the scale's block index appears as an `affine.apply`, an op that evaluates an affine map on index values and yields an index. The bufferized module contains no `affine.apply`. After the loop conversion there is one.
 
 `--lower-affine` is the pass that turns `affine.apply` into ordinary arithmetic, so it can only run once one exists. Placed earlier it would walk a module where the block index is still a subexpression inside an attribute, find nothing to lower, and report success. The failure would surface much later, as an unlowered affine op arriving at a stage that cannot handle it. The constraint looks like pass-ordering trivia and comes directly from a decision made several stages earlier: put the block index in an affine map, and the pass that lowers affine ops has to wait until something materializes it.
 
-With that settled the chain runs to completion. What comes out still cannot be translated, and it comes down to one leaf conversion.
+With that settled the chain runs to completion. What comes out is LLVM dialect except for one operation.
 
-A small probe isolates it. `probe-f8-extf.mlir` holds two functions, each taking an
-eight-bit float as an argument (which avoids compile-time folding), each widening it
-to `f32`:
+A small probe isolates it. `probe-f8-extf.mlir` holds two functions, each taking an eight-bit float as an argument (which avoids compile-time folding), each widening it to `f32`:
 
 ~~~mlir
 func.func @extf_e4m3(%x: f8E4M3FN) -> f32 {
@@ -256,25 +254,25 @@ llvm.func @extf_e8m0(%arg0: i8) -> f32 {
 
 The scale conversion is gone, rewritten as integer work on the byte. The mantissa conversion is still there, spelled exactly as it was written, inside a function that is otherwise LLVM dialect. Above it sits a cast turning the incoming `i8` back into `f8E4M3FN`, left behind because the operation it feeds never converted.
 
-Both signatures became `i8`, so both types were handled. Only one of the two operations was. A CPU has no eight-bit float registers and no eight-bit float arithmetic, so a conversion like this has to be emulated with integer operations, and some pass has to supply that emulation. For `f8E8M0FNU`, `--arith-expand` does. For `f8E4M3FN` on this build, nothing did.
+Both signatures became `i8`, so both types were handled. Only one of the two operations was. There is no eight-bit float arithmetic for the conversion to lower to on the CPU path, so the conversion has to be emulated with integer operations, and some pass has to supply that emulation. For `f8E8M0FNU`, `--arith-expand` does. For `f8E4M3FN` on this build, nothing did.
 
-Handing the result to `mlir-translate` ends the attempt, and not subtly:
+Handing the result to `mlir-translate` ends the attempt:
 
 ~~~
 error: Dialect `arith' not found for custom op 'arith.extf'
 ~~~
 
-The translator registers the LLVM and target dialects only, so a module still carrying an `arith` operation cannot be parsed at all. No LLVM IR comes out, and the backend never sees the conversion. Whatever it might have done with it is a question this never reaches.
+The translator does not register `arith`, so a module still carrying an `arith` operation cannot be parsed at all. No LLVM IR comes out, and the backend never sees the conversion. What the backend would have done with it is a question this attempt never reaches.
 
 Upstream has since closed the gap. Commit `c3c6e286e7eb9`, landed 1 September 2026, adds the missing expansion for `f8E4M3FN` in both directions and exposes it as `include-f8e4m3fn`. That is a little over three months after the build this post is pinned to.
 
-So the two gaps are not the same kind of thing. The vectorizer refused: a check was in place, doing what it was written to do, and getting past it needs a pattern nobody has written. It is still open. This one was not a refusal. The conversion had simply not been written yet, and then someone wrote it.
+So the two gaps are not the same kind of thing. The vectorizer refused: a check was in place, doing what it was written to do, and getting past it needs a rewrite that none of the passes tried performs. It is still open. This one was not a refusal. No check stood in the way; the implementation was absent, and it has since landed.
 
 That does not restore the measurement. An emulated conversion is a sequence of integer operations standing in for hardware that is not present, and timing it measures the stand-in. What the format actually changes is how many bytes move, and that can be counted without running anything.
 
 ## What the intensity number is made of
 
-The roofline for this workload is computed, not measured. Every byte in it comes from the bufferized memref types: shape times element width, each buffer counted once. Nothing runs, and for this quantity nothing needs to.
+The roofline for this workload is computed, not measured. Every byte in it comes from the bufferized memref types: shape times element width, each buffer counted once. 
 
 Three numbers describe a workload on a machine. Operational intensity, written `I`, is how many floating-point operations the workload performs per byte it moves, and it belongs to the workload. Bandwidth, `BW`, is how fast the machine moves bytes, and peak rate, `P_peak`, is how fast it does arithmetic; both belong to the machine. Attainable performance is whichever ceiling binds first:
 
@@ -317,7 +315,7 @@ That regime also shows what v1 does not buy. At `M=1` the `A` operand is one row
      alt="Analytical roofline for mx.block_matmul against an f32 baseline at two shapes"
      style="filter: none; background: #fff;">
 
-Both shapes move rightward, which is what an optimization is supposed to look like, and at neither shape is the movement mostly a memory result. At `M=32` the byte ratio is 1.23× against a 1.50× FLOP inflation; at `M=1` it is 1.01× against the same 1.50×. The plot cannot separate the two, which is why the decomposition is printed beside each arrow rather than left as a single number.
+Both shapes move rightward, which is what an optimization is supposed to look like, and at neither shape is the movement mostly a memory result. At `M=32` the byte ratio is 1.23× against a 1.50× FLOP inflation; at `M=1` it is 1.01× against the same 1.50×. The plot cannot separate the byte saving from the added arithmetic, which is why each intensity carries its decomposition rather than standing as a single number.
 
 ## Reading the same model as a duration
 
