@@ -202,7 +202,7 @@ The ordering first. Most of the chain is mechanical, but two steps have to go in
   ...
 ~~~
 
-In the bufferized `linalg.generic`, the expression `d2 floordiv 32` sits inside the indexing map. A map is an attribute on the op, a piece of compile-time data describing how operands are read, and nothing in the module computes it. The generic has no explicit loops and no explicit index arithmetic; the indices are implied by the maps. `--convert-linalg-to-loops` changes that. Expanding the generic into `scf.for` means every index now has to be computed by some operation, and the scale's block index appears as an `affine.apply`, an op that evaluates an affine map on index values and yields an index. The bufferized module contains no `affine.apply`. After the loop conversion there is one.
+In the bufferized `linalg.generic`, the expression `d2 floordiv 32` sits inside the indexing map. A map is an attribute on the op, a piece of compile-time data describing how operands are read, and nothing in the module computes it. The generic has no explicit loops and no explicit index arithmetic; the indices are implied by the maps. `--convert-linalg-to-loops` changes that. Expanding the generic into `scf.for` means every index now has to be computed by some operation, and the expression appears as an `affine.apply`, an op that evaluates an affine map on index values and yields an index. The bufferized module contains no `affine.apply`; after the loop conversion there is one.
 
 `--lower-affine` is the pass that turns `affine.apply` into ordinary arithmetic, so it can only run once one exists. Placed earlier it would walk a module where the block index is still a subexpression inside an attribute, find nothing to lower, and report success. The failure would surface much later, as an unlowered affine op arriving at a stage that cannot handle it. The constraint looks like pass-ordering trivia and comes directly from a decision made several stages earlier: put the block index in an affine map, and the pass that lowers affine ops has to wait until something materializes it.
 
@@ -254,7 +254,7 @@ llvm.func @extf_e8m0(%arg0: i8) -> f32 {
 
 The scale conversion is gone, rewritten as integer work on the byte. The mantissa conversion is still there, spelled exactly as it was written, inside a function that is otherwise LLVM dialect. Above it sits a cast turning the incoming `i8` back into `f8E4M3FN`, left behind because the operation it feeds never converted.
 
-Both signatures became `i8`, so both types were handled. Only one of the two operations was. There is no eight-bit float arithmetic for the conversion to lower to on the CPU path, so the conversion has to be emulated with integer operations, and some pass has to supply that emulation. For `f8E8M0FNU`, `--arith-expand` does. For `f8E4M3FN` on this build, nothing did.
+Both signatures became `i8`, so both types were handled. Only one of the two operations was. With no eight-bit float arithmetic on the CPU path to lower to, the conversion has to be emulated with integer operations, and some pass has to supply that emulation. `--arith-expand supplies` it for `f8E8M0FNU` and, on this build, for nothing else.
 
 Handing the result to `mlir-translate` ends the attempt:
 
@@ -272,13 +272,13 @@ That does not restore the measurement. An emulated conversion is a sequence of i
 
 ## What the intensity number is made of
 
-The roofline for this workload is computed, not measured. Every byte in it comes from the bufferized memref types: shape times element width, each buffer counted once. 
+The roofline for this workload is computed from the bufferized memref types: shape times element width, each buffer counted once.
 
 Three numbers describe a workload on a machine. Operational intensity, written `I`, is how many floating-point operations the workload performs per byte it moves, and it belongs to the workload. Bandwidth, `BW`, is how fast the machine moves bytes, and peak rate, `P_peak`, is how fast it does arithmetic; both belong to the machine. Attainable performance is whichever ceiling binds first:
 
 $$P = \min(P_{\text{peak}}, \text{BW} \times I)$$
 
-The two ceilings meet at an intensity called the ridge, `P_peak / BW`, a fixed property of the hardware. Quantization does not move it. Quantization changes `I`, sliding the workload along a roof that stays where it is. The machine here is a base M4, whose 120 GB/s of LPDDR5X bandwidth Apple publishes; its peak arithmetic rate is not published, and the figure used below is reverse-engineered from core count, FMA units, lane width and clock.
+The two ceilings meet at an intensity called the ridge, `P_peak / BW`, a fixed property of the hardware. Quantization does not move the ridge. It changes `I`, sliding the workload along a roof that stays put. The machine here is a base M4, whose 120 GB/s of LPDDR5X bandwidth Apple publishes; its peak arithmetic rate is not published, and the figure used here, 560 GFLOP/s, is reverse-engineered from core count, FMA units, lane width and clock. The plot draws the ridge as a band, 30% either side, for that reason.
 
 For `M=32, N=64, K=64` with a block size of 32, against an all-`f32` baseline:
 
@@ -287,7 +287,7 @@ For `M=32, N=64, K=64` with a block size of 32, against an all-`f32` baseline:
 | f32 | 32,768 | 262,144 | 8.00 |
 | mx | 26,688 | 393,216 | 14.73 |
 
-Intensity rises by 1.84×, and that is the least useful number in the table, because it is a product of two effects that mean opposite things:
+Intensity rises by 1.84×, and that is the least useful number here, because it is a product of two effects that mean opposite things:
 
 $$1.84 = 1.23 \times 1.50$$
 
@@ -305,23 +305,27 @@ A = A operand (mantissa + scale)   B = B operand   C = accumulator
 
 `A` shrinks to a quarter of its width while the 24,576 bytes of `B` and the accumulator do not move at all. A 3.88× reduction on one operand is a 1.23× reduction on the working set. The 4× is a true statement about a format; the 1.23× is a true statement about this workload.
 
-Both points also sit in the wrong region to show what quantization is for. With this machine's bandwidth and peak the ridge falls near 4.7 FLOPs per byte, and 8.00 and 14.73 are both above it, so both are compute-bound. The movement is inside the compute-bound region, not a crossing out of the memory-bound one. That is not because the problem is small. It follows from the reuse a matmul of this shape has: 262,144 operations over 32,768 bytes, because every element of `A` and `B` participates in many products.
+Both intensities sit in the wrong region to show what quantization is for. With this machine's bandwidth and peak the ridge falls near 4.7 FLOPs per byte, and 8.00 and 14.73 both sit above the band around it, so both are compute-bound. The movement is inside the compute-bound region, not a crossing out of the memory-bound one. That is not because the problem is small. It follows from the reuse in a matmul: each element of `A` feeds `N` products and each element of `B` feeds `M`, so the `f32` baseline alone performs 262,144 operations over 32,768 bytes and sits above the ridge before anything is quantized.
 
-The regime where the memory result would appear is decode. In language-model inference, prefill processes the whole prompt at once and decode generates one token at a time, which means the activation matrix has a single row: `M = 1`. FLOP count is `2·M·N·K` and scales with `M`, so it collapses. The `B` operand is `K×N` and has to be read in full regardless of how many rows it multiplies. Little arithmetic over the same weight bytes puts intensity far below the ridge, and the workload becomes memory-bound.
+The regime where the memory result would appear is decode. In language-model inference, prefill processes the whole prompt at once and decode generates one token at a time, which means the activation matrix has a single row: `M = 1`. The baseline FLOP count is `2·M·N·K` and scales with `M`, so it collapses. The `B` operand is `K×N` and has to be read in full regardless of how many rows it multiplies. Little arithmetic over the same weight bytes puts intensity far below the ridge, and the workload becomes memory-bound.
 
-That regime also shows what v1 does not buy. At `M=1` the `A` operand is one row of 64 values, 256 bytes against `B`'s 16,384, so quantizing it moves the total from 16,896 bytes to 16,706. The same model at `M=1` gives an intensity shift of 1.52× against a byte ratio of 1.01×, while the FLOP inflation is 1.50×. Almost the entire apparent gain is the dequantization multiply, and the memory win is a rounding error.
+That regime also shows what v1 does not buy. At `M=1` the `A` operand is one row of 64 values, 256 bytes against `B`'s 16,384, so quantizing it moves the total from 16,896 bytes to 16,706. Intensity still rises 1.52×, and `1.01 × 1.50` is where it comes from. Almost the entire apparent gain is the dequantization multiply, and the memory win is a rounding error.
 
 <img src="/img/roofline.svg"
      alt="Analytical roofline for mx.block_matmul against an f32 baseline at two shapes"
      style="filter: none; background: #fff;">
 
-Both shapes move rightward, which is what an optimization is supposed to look like, and at neither shape is the movement mostly a memory result. At `M=32` the byte ratio is 1.23× against a 1.50× FLOP inflation; at `M=1` it is 1.01× against the same 1.50×. The plot cannot separate the byte saving from the added arithmetic, which is why each intensity carries its decomposition rather than standing as a single number.
+Both shapes move rightward, which is what an optimization is supposed to look like, and at neither shape is the movement mostly a memory result. The plot cannot separate the byte saving from the added arithmetic, which is why each arrow is labelled with its decomposition rather than the shift alone.
 
 ## Reading the same model as a duration
 
 The roofline's axes are intensity and rate. Neither is time, and time is what quantization is supposed to improve.
 
-The same two ceilings give it. Moving the data and doing the arithmetic happen at once, so the longer of the two sets the duration: bytes over bandwidth, or FLOPs over peak rate, whichever is larger. That is the `min` above seen from the other side, since dividing the work by the lower of two rates gives the longer of two times. Both inputs are ceilings, so the durations that come out are floors: the best case, not a prediction.
+The same two ceilings give it:
+
+$$T = \max\left(\frac{\text{Bytes}}{\text{BW}},\ \frac{\text{FLOPs}}{P_{\text{peak}}}\right)$$
+
+Moving the data and doing the arithmetic happen at once, so whichever takes longer sets the duration. That is the attainable-rate formula seen from the other side, since dividing the work by the lower of two rates gives the longer of two times. Both inputs are ceilings, so the durations that come out are floors: the best case, not a prediction.
 
 <img src="/img/roofline-time.svg"
      alt="Modelled time per call for the f32 baseline and mx block matmul at both shapes"
@@ -331,13 +335,13 @@ At `M=32` the arithmetic ceiling binds, so the mx path performs 1.5× the operat
 
 At `M=1` the bandwidth ceiling binds, and 16,706 bytes against 16,896 is a 1% difference, so the two durations are level at about 140 ns. The roofline nevertheless puts the mx point at 88 GFLOP/s against the baseline's 58. GFLOP/s counts operations per second, and the mx path performs 1.5× the operations in the same time, so the rate rises. The operations it added are dequantization: work that unpacks the format rather than producing any part of the answer. The axis cannot tell a multiply that computes the result from one that undoes the compression, and it credits both.
 
-The ratios are worth more than the absolute nanoseconds. Real code reaches some fraction of peak, so both bars would stretch, and if both stretch by the same factor the 1.5× between them is unchanged. That assumes the two variants sit a similar distance from peak, which is not guaranteed when one of them loads one-byte values, widens them, and carries an extra multiply. What does not depend on the model is the direction: more arithmetic against the same ceiling can only take longer. The size of the gap does.
+The ratios are worth more than the absolute nanoseconds. Every duration here is a lower bound, since it divides real work by rates the machine never quite reaches, and real code lands at some fraction of them. A ratio of two durations is the more portable number: if both precisions reach a similar fraction of peak, dividing both durations by that fraction leaves the 1.5× at `M=32` unchanged. That is an assumption rather than a guarantee: the mx path loads one-byte values, widens them with an emulated conversion, and carries an extra multiply. If it reaches a lower fraction of peak than the baseline, the real gap is wider than the model's 1.5×, never narrower: the arithmetic ceiling binds at `M=32`, and more arithmetic against the same ceiling can only take longer.
 
-Where that extra arithmetic comes from is worth naming, because it is not inherent to the format. [Post 3](@/posts/lowering-mx-block-matmul.md) lowers `mx.block_matmul` to a single fused `linalg.generic`, reconstructing each `A` value inside the loop nest rather than materializing a dequantized `f32` tensor first. The reconstruction therefore sits inside the `n` loop and runs once per output column: `M·N·K` multiplies where dequantizing `A` once would have cost `M·K`. The entire 1.50× is the price of not writing that intermediate. Fusion optimizes for bytes. This shape is limited by FLOPs. The decision is sound against the objective it was chosen for and costs time against the one that binds here.
+That extra arithmetic is not inherent to the format. [Post 3](@/posts/lowering-mx-block-matmul.md) lowers `mx.block_matmul` to a single fused `linalg.generic`, reconstructing each `A` value inside the loop nest rather than materializing a dequantized `f32` tensor first. The reconstruction therefore sits inside the `n` loop and runs once per output column: `M·N·K` multiplies, 131,072 at this shape, where dequantizing `A` once would have cost `M·K`, or 2,048. Added to the baseline's 262,144 operations, that is the entire 1.50×. Fusion buys the `f32` intermediate never being written, at the cost of arithmetic, which is the right trade when the problem is memory-bound and the wrong one when it is compute-bound.
 
-So neither shape comes out faster. At `M=32` the mx path takes 1.5× as long; at `M=1` the two are level. That is the honest state of `A`-only quantization with `B` and the accumulator still in `f32`: the format cost is paid on every point and the byte saving is too small to repay it. What v1 establishes is the lowering and the byte accounting, neither of which cares which operand carries the format. Quantizing `B` is what moves the decode point. Under the same byte arithmetic, quantizing both operands at `M=1` takes the working set from 16,896 bytes to 4,546 and the modelled time from 141 ns to 38 ns, still memory-bound, so the time ratio and the byte ratio are the same 3.7×. v1 does not quantize `B`, so that is a projection from the type information rather than a result.
+So neither shape comes out faster. At `M=32` the mx path takes 1.5× as long; at `M=1` the two are level, within 1%. That is the honest state of `A`-only quantization with `B` and the accumulator still in `f32`: the extra multiply is paid on every point and the byte saving is too small to repay it.
 
-One caveat about the roof. Because the peak arithmetic rate is reverse-engineered rather than published, the ridge is drawn as a band rather than a line, and the modelled durations inherit that uncertainty. The intensity values do not depend on it at all, since they come from the type information alone.
+The modelled durations inherit the uncertainty in that peak rate. At `M=32` both variants are bound by `FLOPs / P_peak`, so a different peak moves both bars and leaves the 1.5× between them intact. The intensity values do not depend on it at all, since `FLOPs / Bytes` comes from the shapes and element widths alone.
 
 ## What the diagnosis bought
 
