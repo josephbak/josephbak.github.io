@@ -1,10 +1,10 @@
 +++
-title = "5 - Two Gaps and a Roofline: Executing an MX Dialect End-to-End"
-description = "Driving a block-scaled dialect to running code: a vectorizer that reads syntax instead of values, an f8 conversion with no CPU path, and a roofline number that rises for two different reasons."
+title = "5 - Two Gaps and a Roofline: Driving an MX Dialect to Execution"
+description = "Driving a block-scaled dialect toward running code: a vectorizer that reads syntax instead of values, an f8 conversion with no CPU path, and a roofline number that rises for two different reasons."
 slug = "two-gaps-and-a-roofline"
-date = 2026-09-14
+date = 2026-10-01
 weight = 5
-draft = true
+draft = false
 [taxonomies]
 categories = ["MX-Quantization Dialect"]
 tags = ["mlir", "compilers", "quantization", "vectorization"]
@@ -107,7 +107,7 @@ The message names no cause, and its location is misleading: it points at line 7 
 
 The operand types in that dump are `32x32` and `32x1`, so the op under consideration is the tiled one, not the original. The gate is `allIndexingsAreProjectedPermutation`, called from `vectorizeLinalgOpPrecondition` before any vectorization work begins. It requires every indexing map on the op to be a projected permutation, which rules out arithmetic on an iteration dimension. Three of the four maps qualify. `(d0, d2 floordiv 32)` performs a division on `d2`, and one map is enough to reject the op.
 
-What tiling changed and what it did not is the point. It changed the scale's behavior: the value is now fixed across the tile's reduction, and the block index has been lifted into an `affine.apply` above the loop body. It did not change a character of the map, which still reads `d2 floordiv 32`. The precondition inspects the map's expression, so it sees the division and stops. An affine map stores an expression, not the range its dimensions take, so nothing in it records that `d2` now runs to 32 instead of 64.
+Tiling changed the scale's behavior: the value is now fixed across the tile's reduction, and the block index has been lifted into an `affine.apply` above the loop body. It did not change a character of the map, which still reads `d2 floordiv 32`. The precondition inspects the map's expression, so it sees the division and stops. An affine map stores an expression, not the range its dimensions take, so nothing in it records that `d2` now runs to 32 instead of 64.
 
 Untiled, the same refusal is the right call. The scale changes partway through the reduction, lanes covering `k = 31` and `k = 32` need different values, and there is nothing to broadcast. Tiling is what makes the access uniform, and the map is the same either way.
 
@@ -167,11 +167,9 @@ That the constant is admitted at all comes down to a parameter. `allIndexingsAre
 
 Untiled, either version would be a miscompile. The scale operand is the full `32x2`, `k` sweeps 0 to 63 in one loop, and the two halves of that sweep need different columns; a map that always reads the first block would use its factor for all 64 positions. The rewrite is valid only where tiling has already confined `k` to one block, which is why it has to be recognized rather than simply applied.
 
-What the pipeline does not have is anything that performs this rewrite on its own.
-
 ## The range the verifier already knows
 
-The one-line edit was made by hand. Whether anything upstream makes it is a question for the tiled nest as the schedule emitted it, with `d2 floordiv 32` still in the scale map. Every pass registered in `mlir-opt` at this revision was tried on that nest, one at a time. Of those that accept it, none rewrites the scale map. The two transform ops that expose the same folding patterns leave it unchanged. No test under `mlir/test/Dialect/Linalg` starts from a `linalg` map containing a `floordiv`.
+The one-line edit was made by hand. Checking whether anything upstream makes it starts from the tiled nest as the schedule emitted it, with `d2 floordiv 32` still in the scale map. Every pass registered in `mlir-opt` at this revision was tried on that nest, one at a time. Of those that accept it, none rewrites the scale map. The two transform ops that expose the same folding patterns leave it unchanged. No test under `mlir/test/Dialect/Linalg` starts from a `linalg` map containing a `floordiv`.
 
 The candidate that should have caught it is unit-dim folding. The `1` in `tensor<32x1xf8E8M0FNU>` is why the column index can only ever be 0, and `--linalg-fold-unit-extent-dims` exists to remove size-1 axes from `linalg` ops. It is not inert on this operand: it rank-reduces the scale slice to `tensor<32>` and then expands it straight back to `tensor<32x1>`, because a map needs one result per axis and the generic's scale map still has two. What it never edits is the map.
 
@@ -195,12 +193,12 @@ Measuring anything means running it, and running it means getting the module dow
 
 The ordering first. Most of the chain is mechanical, but two steps have to go in a fixed relative order, and the reason is the block scale:
 
-~~~
+```
   ...
   --convert-linalg-to-loops
   --lower-affine
   ...
-~~~
+```
 
 In the bufferized `linalg.generic`, the expression `d2 floordiv 32` sits inside the indexing map. A map is an attribute on the op, a piece of compile-time data describing how operands are read, and nothing in the module computes it. The generic has no explicit loops and no explicit index arithmetic; the indices are implied by the maps. `--convert-linalg-to-loops` changes that. Expanding the generic into `scf.for` means every index now has to be computed by some operation, and the expression appears as an `affine.apply`, an op that evaluates an affine map on index values and yields an index. The bufferized module contains no `affine.apply`; after the loop conversion there is one.
 
@@ -210,7 +208,7 @@ With that settled the chain runs to completion. What comes out is LLVM dialect e
 
 A small probe isolates it. `probe-f8-extf.mlir` holds two functions, each taking an eight-bit float as an argument (which avoids compile-time folding), each widening it to `f32`:
 
-~~~mlir
+```mlir
 func.func @extf_e4m3(%x: f8E4M3FN) -> f32 {
   %0 = arith.extf %x : f8E4M3FN to f32
   return %0 : f32
@@ -219,24 +217,24 @@ func.func @extf_e8m0(%y: f8E8M0FNU) -> f32 {
   %0 = arith.extf %y : f8E8M0FNU to f32
   return %0 : f32
 }
-~~~
+```
 
 The obvious thing to reach for does not exist here:
 
-~~~
+```
 $ mx-opt probe-f8-extf.mlir --arith-expand="include-f8e4m3fn=true"
 error: <Pass-Options-Parser>: no such option include-f8e4m3fn
-~~~
+```
 
 Its counterpart for the scale type does:
 
-~~~
+```
 $ mx-opt probe-f8-extf.mlir \
     --arith-expand="include-f8e8m0=true" \
     --convert-arith-to-llvm --convert-func-to-llvm --reconcile-unrealized-casts
-~~~
+```
 
-~~~mlir
+```mlir
 llvm.func @extf_e4m3(%arg0: i8) -> f32 {
   %0 = builtin.unrealized_conversion_cast %arg0 : i8 to f8E4M3FN
   %1 = arith.extf %0 : f8E4M3FN to f32
@@ -250,17 +248,17 @@ llvm.func @extf_e8m0(%arg0: i8) -> f32 {
   %7 = llvm.bitcast %6 : i32 to f32
   llvm.return %7 : f32
 }
-~~~
+```
 
 The scale conversion is gone, rewritten as integer work on the byte. The mantissa conversion is still there, spelled exactly as it was written, inside a function that is otherwise LLVM dialect. Above it sits a cast turning the incoming `i8` back into `f8E4M3FN`, left behind because the operation it feeds never converted.
 
-Both signatures became `i8`, so both types were handled. Only one of the two operations was. With no eight-bit float arithmetic on the CPU path to lower to, the conversion has to be emulated with integer operations, and some pass has to supply that emulation. `--arith-expand supplies` it for `f8E8M0FNU` and, on this build, for nothing else.
+Both signatures became `i8`, so both types were handled. Only one of the two operations was. With no eight-bit float arithmetic on the CPU path to lower to, the conversion has to be emulated with integer operations, and some pass has to supply that emulation. `--arith-expand` supplies it for `f8E8M0FNU` and, on this build, for nothing else.
 
 Handing the result to `mlir-translate` ends the attempt:
 
-~~~
+```
 error: Dialect `arith' not found for custom op 'arith.extf'
-~~~
+```
 
 The translator does not register `arith`, so a module still carrying an `arith` operation cannot be parsed at all. No LLVM IR comes out, and the backend never sees the conversion. What the backend would have done with it is a question this attempt never reaches.
 
@@ -335,22 +333,22 @@ At `M=32` the arithmetic ceiling binds, so the mx path performs 1.5× the operat
 
 At `M=1` the bandwidth ceiling binds, and 16,706 bytes against 16,896 is a 1% difference, so the two durations are level at about 140 ns. The roofline nevertheless puts the mx point at 88 GFLOP/s against the baseline's 58. GFLOP/s counts operations per second, and the mx path performs 1.5× the operations in the same time, so the rate rises. The operations it added are dequantization: work that unpacks the format rather than producing any part of the answer. The axis cannot tell a multiply that computes the result from one that undoes the compression, and it credits both.
 
-The ratios are worth more than the absolute nanoseconds. Every duration here is a lower bound, since it divides real work by rates the machine never quite reaches, and real code lands at some fraction of them. A ratio of two durations is the more portable number: if both precisions reach a similar fraction of peak, dividing both durations by that fraction leaves the 1.5× at `M=32` unchanged. That is an assumption rather than a guarantee: the mx path loads one-byte values, widens them with an emulated conversion, and carries an extra multiply. If it reaches a lower fraction of peak than the baseline, the real gap is wider than the model's 1.5×, never narrower: the arithmetic ceiling binds at `M=32`, and more arithmetic against the same ceiling can only take longer.
+The ratios are worth more than the absolute nanoseconds. Real code reaches some fraction of each ceiling, so every absolute duration here is too short by some factor. A ratio of two durations is the more portable number: if both precisions reach a similar fraction of peak, dividing both durations by that fraction leaves the 1.5× at `M=32` unchanged. That is an assumption rather than a guarantee: the mx path loads one-byte values, widens them with an emulated conversion, and carries an extra multiply. If it reaches a lower fraction of peak than the baseline, the real gap is wider than the model's 1.5×, never narrower: the arithmetic ceiling binds at `M=32`, and more arithmetic against the same ceiling can only take longer.
 
 That extra arithmetic is not inherent to the format. [Post 3](@/posts/lowering-mx-block-matmul.md) lowers `mx.block_matmul` to a single fused `linalg.generic`, reconstructing each `A` value inside the loop nest rather than materializing a dequantized `f32` tensor first. The reconstruction therefore sits inside the `n` loop and runs once per output column: `M·N·K` multiplies, 131,072 at this shape, where dequantizing `A` once would have cost `M·K`, or 2,048. Added to the baseline's 262,144 operations, that is the entire 1.50×. Fusion buys the `f32` intermediate never being written, at the cost of arithmetic, which is the right trade when the problem is memory-bound and the wrong one when it is compute-bound.
 
-So neither shape comes out faster. At `M=32` the mx path takes 1.5× as long; at `M=1` the two are level, within 1%. That is the honest state of `A`-only quantization with `B` and the accumulator still in `f32`: the extra multiply is paid on every point and the byte saving is too small to repay it.
+So neither shape comes out faster. At `M=32` the mx path takes 1.5× as long; at `M=1` the two are level, within 1%. That is the state of `A`-only quantization with `B` and the accumulator still in `f32`: the extra multiply is paid on every point and the byte saving is too small to repay it.
 
-The modelled durations inherit the uncertainty in that peak rate. At `M=32` both variants are bound by `FLOPs / P_peak`, so a different peak moves both bars and leaves the 1.5× between them intact. The intensity values do not depend on it at all, since `FLOPs / Bytes` comes from the shapes and element widths alone.
+The modelled durations inherit the uncertainty in the reverse-engineered peak rate. At `M=32` both variants are bound by `FLOPs / P_peak`, so a different peak moves both bars and leaves the 1.5× between them intact. The intensity values do not depend on it at all, since `FLOPs / Bytes` comes from the shapes and element widths alone.
 
 ## What the diagnosis bought
 
-The dialect lowered, bufferized, and tiled without incident. Then the vectorizer refused the scale map, the folding pass that looked like the fix turned out to be solving a different problem, the f8 conversion had no implementation on the CPU path, and the intensity number at the end folded a saving and an overhead into one figure.
+The dialect lowered, bufferized, and tiled without incident. Then the vectorizer refused the scale map, no pass would write the zero the verifier had already worked out, the `f8` conversion had no implementation on the CPU path, and the intensity number at the end folded a saving and an overhead into one figure.
 
-Both gaps were real on `llvm-project` at `6f92180`. One has since been filled: `arith-expand` gained the `f8E4M3FN` expansion on 1 September 2026, so a build from today lowers what this one could not. The other is open at HEAD. The pattern that would close it recognizes a `floordiv` confined to a single block and rewrites the operand and the map together, and it has not been written. It is general rather than specific to this dialect: any block-scaled format lowered through an affine map meets the same wall.
+Both gaps were real on `llvm-project` at `6f92180`. The `f8` conversion has since been implemented upstream, so a build from today lowers what this one could not. The vectorization gap remains: closing it needs a rewrite that recognizes a map result fixed at a constant by the loop it sits in, and none of the passes tried performs one. `isUnitDim`, the check that comes closest, is unchanged at HEAD. Any block-scaled format whose scale map indexes blocks with a `floordiv` meets the same wall.
 
-What v1 has is the lowering and the byte accounting. Four ops, a parameterized type, three canonicalizations, a conversion to `linalg` on tensors, a 1:N split that bufferizes copy-free, and a tiled schedule whose block-aligned `K` makes the broadcast form reachable. The byte model built on that works from types and shapes, so it can price a change the code does not implement, which is how a quantized `B` gets a number here without existing.
+What v1 has is the lowering and the byte accounting. Four ops, a parameterized type, three canonicalizations, a conversion to `linalg` on tensors, a 1:N split that bufferizes copy-free, and a tiled schedule whose block-aligned `K` makes the broadcast form reachable. The byte model built on that works from types and shapes, so it can price a change the code does not implement, which is how a quantized `B` gets a number below without existing. The code, the tests, and the scripts behind every number in this post are in the [mlir-mx repository](https://github.com/josephbak/mlir-mx).
 
-What v1 does not have is a speedup. At `M=32` the mx path takes 1.5× as long, and at `M=1` the two are level. Quantizing `A` pays at neither shape, because at `M=32` arithmetic binds and at `M=1` `A` is a rounding error against `B`. A second version would quantize `B`, build the vectorization pattern, and measure on a build with the f8 expansion.
+What v1 does not have is a speedup. Quantizing `A` pays at neither shape, because at `M=32` arithmetic binds and at `M=1` `A` is a rounding error against `B`. Quantizing `B` is what moves the decode point. Under the same byte arithmetic, quantizing both operands at `M=1` takes the working set from 16,896 bytes to 4,546 and the modelled time from 141 ns to 38 ns, still memory-bound, so the time ratio and the byte ratio are the same 3.7×. That is a projection from the type information rather than a result, and a second version would make it one: quantize `B`, build the missing rewrite, and measure on a target that converts `f8` natively rather than emulating it.
 
-The series worked down one pipeline, a stage per post. [Post 1](@/posts/designing-mx-dialect.md) put a block scale into a type. [Post 2](@/posts/canonicalization-e8m0-power-of-two.md) found the power-of-two structure in the scale format and what it makes exact. [Post 3](@/posts/lowering-mx-block-matmul.md) reduced block-scaled matmul to one `floordiv` in one affine map. [Post 4](@/posts/bufferizing-block-scaled-types.md) split one value into two buffers and accumulated in place. This post took all of it to the last stage, where two upstream gaps stopped the pipeline and the number at the end was computed rather than measured.
+The series worked down one pipeline, a stage per post. [Post 1](@/posts/designing-mx-dialect.md) put a block scale into a type. [Post 2](@/posts/canonicalization-e8m0-power-of-two.md) found the power-of-two structure in the scale format and what it makes exact. [Post 3](@/posts/lowering-mx-block-matmul.md) reduced block-scaled matmul to one `floordiv` in one affine map. [Post 4](@/posts/bufferizing-block-scaled-types.md) split one value into two buffers and accumulated in place. This post took all of it to the last stage, located the two points where upstream stops, one before vectorization and one before translation, and priced the result from the types the earlier posts built.
