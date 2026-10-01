@@ -87,6 +87,10 @@
         <lastmod>2026-08-26</lastmod>
     </url>
     <url>
+        <loc>https://josephbak.github.io/posts/two-gaps-and-a-roofline/</loc>
+        <lastmod>2026-10-01</lastmod>
+    </url>
+    <url>
         <loc>https://josephbak.github.io/series/</loc>
     </url>
     <url>
@@ -154,5 +158,8 @@
     </url>
     <url>
         <loc>https://josephbak.github.io/tags/transform-dialect/</loc>
+    </url>
+    <url>
+        <loc>https://josephbak.github.io/tags/vectorization/</loc>
     </url>
 </urlset>

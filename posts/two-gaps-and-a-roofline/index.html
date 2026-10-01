@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  
+  
+    
+  
+  <meta name="description" content="Driving a block-scaled dialect toward running code: a vectorizer that reads syntax instead of values, an f8 conversion with no CPU path, and a roofline number that rises for two different reasons.">
+
+  <title>5 - Two Gaps and a Roofline: Driving an MX Dialect to Execution</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="https://josephbak.github.io/img/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://josephbak.github.io/img/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://josephbak.github.io/img/apple-touch-icon.png">
+  
+  <style>
+
+  /* light mode colors */
+  body {
+    --primary-color: #5871a2;
+    --primary-pale-color: #5871a233;
+    --primary-decoration-color: #5871a210;
+    --bg-color: #ffffff;
+    --text-color: #2f3030;
+    --text-pale-color: #767676;
+    --text-decoration-color: #a9a9a9;
+    --highlight-mark-color: #5f75b020;
+
+    --callout-note-color: #5871a2;
+    --callout-tip-color: #268556;
+    --callout-important-color: #885fc9;
+    --callout-warning-color: #ab6632;
+    --callout-caution-color: #c64e4e;
+  }
+
+  /* dark mode colors */
+  body.dark {
+    --primary-color: #6f8fd1;
+    --primary-pale-color: #6f8fd166;
+    --primary-decoration-color: #6f8fd112;
+    --bg-color: #1c1c1c;
+    --text-color: #c1c1c1;
+    --text-pale-color: #848484;
+    --text-decoration-color: #5f5f5f;
+    --highlight-mark-color: #8296cb3b;
+
+    --callout-note-color: #6f8fd1;
+    --callout-tip-color: #47976f;
+    --callout-important-color: #9776cd;
+    --callout-warning-color: #ad7a52;
+    --callout-caution-color: #d06161;
+  }
+
+  /* typography */
+  body {
+    --main-font: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --code-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --homepage-max-width: 768px;
+    --main-max-width: 768px;
+    --avatar-size: 60px;
+    --font-size: 16px;
+    --line-height: 1.75;
+    --img-border-radius: 0px;
+    --detail-border-radius: 0px;
+    --dark-mode-img-brightness: 0.75;
+    --dark-mode-chart-brightness: 0.75;
+    --inline-code-border-radius: 2px;
+    --inline-code-bg-color: var(--primary-decoration-color);
+    --block-code-border-radius: 0px;
+    --block-code-border-color: var(--primary-color);
+    --detail-border-color: var(--primary-color);
+  }
+
+</style>
+
+  <link rel="stylesheet" href="https://josephbak.github.io/main.css">
+  
+
+<link id="hl" rel="stylesheet" type="text/css" href="/hl-light.css" />
+
+
+
+  
+</head>
+
+<body class="post">
+  
+  <script>
+    const theme = sessionStorage.getItem('theme');
+    const match = window.matchMedia("(prefers-color-scheme: dark)").matches
+    if ((theme && theme == 'dark') || (!theme && match)) {
+      document.body.classList.add('dark');
+      const hl = document.querySelector('link#hl');
+      if (hl) hl.href = 'https://josephbak.github.io/hl-dark.css';
+    }
+  </script>
+  
+  
+<div id="wrapper">
+  <div id="blank"></div>
+  <aside>
+    
+    
+    <nav>
+      <ul>
+        
+        <li>
+          <a class="h2" href="#the-bar-the-generic-postponed">The bar the generic postponed</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#what-the-map-would-have-to-become">What the map would have to become</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#the-range-the-verifier-already-knows">The range the verifier already knows</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#where-the-f8-conversion-stops">Where the f8 conversion stops</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#what-the-intensity-number-is-made-of">What the intensity number is made of</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#reading-the-same-model-as-a-duration">Reading the same model as a duration</a>
+          
+        </li>
+        
+        <li>
+          <a class="h2" href="#what-the-diagnosis-bought">What the diagnosis bought</a>
+          
+        </li>
+        
+      </ul>
+    </nav>
+    
+    
+    <button id="back-to-top" aria-label="back to top">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-arrow-up"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+
+    </button>
+    
+  </aside>
+  <main>
+    
+<header>
+  <nav>
+    <a id="back-link" href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts">← Back</a>
+  </nav>
+</header>
+
+
+    <div>
+      
+      
+      
+      
+      <div id="copy-cfg" style="display: none;" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+"></div>
+      
+      <article class="prose">
+        <h1>5 - Two Gaps and a Roofline: Driving an MX Dialect to Execution</h1>
+        <div id="post-info">
+          <div id="date">
+            <span id="publish">Oct 1, 2026</span>
+            </div>
+
+          
+          <div id="tags">
+            <a class="instant" href="https://josephbak.github.io//tags/mlir"><span>#</span>mlir</a><a class="instant" href="https://josephbak.github.io//tags/compilers"><span>#</span>compilers</a><a class="instant" href="https://josephbak.github.io//tags/quantization"><span>#</span>quantization</a><a class="instant" href="https://josephbak.github.io//tags/vectorization"><span>#</span>vectorization</a>
+          </div>
+          
+        </div>
+
+        
+        
+
+        
+
+        <!-- KaTeX includes (inline; requires markdown.render_unsafe = true) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
+<script>
+ document.addEventListener("DOMContentLoaded", function() {
+ renderMathInElement(document.body, {
+ delimiters: [
+ {left: "$$", right: "$$", display: true},
+ {left: "\\[", right: "\\]", display: true},
+ {left: "$", right: "$", display: false},
+ {left: "\\(", right: "\\)", display: false}
+ ],
+ throwOnError: false
+ });
+ });
+</script>
+<h2 id="the-bar-the-generic-postponed">The bar the generic postponed<a class="zola-anchor" href="#the-bar-the-generic-postponed" aria-label="Anchor link for: the-bar-the-generic-postponed" style="visibility: hidden;"></a>
+</h2>
+<p><a href="https://josephbak.github.io/posts/lowering-mx-block-matmul/">Post 3</a> ended owing an answer. The scale operand's indexing map, <code>(d0, d2 floordiv 32)</code>, cleared <code>linalg.generic</code>'s verifier, which asks only whether the operands' maps taken together recover the iteration space. The structured vectorizer asks a stricter question of every map on its own, and the same <code>floordiv</code> fails it. Choosing a generic did not clear that bar. It postponed it, and this is where it comes due.</p>
+<p>That is the first of two gaps between a lowering that verifies and code that runs. The second stops the pipeline before it reaches LLVM IR. Neither says what is wrong. The number at the end rises for two reasons, and only one of them is a win.</p>
+<p>Everything below is written against <code>llvm-project</code> at revision <code>6f92180</code> (2026-05-19), the commit this dialect builds on. Where upstream has since changed something this post relies on, the change is noted at that point.</p>
+<p>The schedule that tiles is short. It is Transform-dialect IR, data rather than compiled code, loaded into the pipeline and interpreted:</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">module attributes {transform.with_named_sequence} {
+</span><span class="z-text z-plain">  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+</span><span class="z-text z-plain">    %matmul = transform.structured.match ops{[&quot;linalg.generic&quot;]} in %root
+</span><span class="z-text z-plain">      : (!transform.any_op) -&gt; !transform.any_op
+</span><span class="z-text z-plain">    %tiled, %loop_n, %loop_k =
+</span><span class="z-text z-plain">      transform.structured.tile_using_for %matmul tile_sizes [0, 32, 32]
+</span><span class="z-text z-plain">        : (!transform.any_op) -&gt; (!transform.any_op, !transform.any_op, !transform.any_op)
+</span><span class="z-text z-plain">    transform.yield
+</span><span class="z-text z-plain">  }
+</span><span class="z-text z-plain">}
+</span></code></pre>
+<p>The tile sizes are <code>[0, 32, 32]</code> over the iteration space <code>(m, n, k)</code>. <code>M</code> is not tiled: it is already 32, and tiling it would produce a single-trip loop. <code>N</code> and <code>K</code> are tiled by 32, and the size on <code>K</code> is the one that matters. A <code>K</code> tile equal to the block size keeps each tile inside one MX block, so the block index is fixed for the whole tile.</p>
+<p>The schedule is loaded by <code>mlir-opt</code> rather than <code>mx-opt</code>. Both are pass drivers, but <code>mx-opt</code> is this project's own, and it registers only the dialects the project needs, which does not include the Transform dialect or its Linalg extension. No <code>mx</code> ops survive <code>--mx-to-linalg</code>, so the second tool sees only upstream dialects.</p>
+<pre class="z-code"><code><span class="z-text z-plain">$ mx-opt lower-matmul.mlir --mx-to-linalg \
+</span><span class="z-text z-plain">    | mlir-opt --transform-preload-library=&#39;transform-library-paths=schedule.mlir&#39; \
+</span><span class="z-text z-plain">               --transform-interpreter
+</span></code></pre>
+<p>That produces the loop nest (payload elided; tiling leaves it unchanged):</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">#map = affine_map&lt;(d0) -&gt; (d0 floordiv 32)&gt;
+</span><span class="z-text z-plain">#map1 = affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;
+</span><span class="z-text z-plain">#map2 = affine_map&lt;(d0, d1, d2) -&gt; (d0, d2 floordiv 32)&gt;
+</span><span class="z-text z-plain">#map3 = affine_map&lt;(d0, d1, d2) -&gt; (d2, d1)&gt;
+</span><span class="z-text z-plain">#map4 = affine_map&lt;(d0, d1, d2) -&gt; (d0, d1)&gt;
+</span><span class="z-text z-plain">...
+</span><span class="z-text z-plain">      %1 = scf.for %arg6 = %c0_0 to %c64_1 step %c32_2 iter_args(%arg7 = %arg5) -&gt; (tensor&lt;32x64xf32&gt;) {
+</span><span class="z-text z-plain">        %2 = affine.apply #map(%arg6)
+</span><span class="z-text z-plain">        %extracted_slice = tensor.extract_slice %arg0[0, %arg6] [32, 32] [1, 1] : tensor&lt;32x64xf8E4M3FN&gt; to tensor&lt;32x32xf8E4M3FN&gt;
+</span><span class="z-text z-plain">        %extracted_slice_3 = tensor.extract_slice %arg1[0, %2] [32, 1] [1, 1] : tensor&lt;32x2xf8E8M0FNU&gt; to tensor&lt;32x1xf8E8M0FNU&gt;
+</span><span class="z-text z-plain">        ...
+</span><span class="z-text z-plain">        %3 = linalg.generic {indexing_maps = [#map1, #map2, #map3, #map4], iterator_types = [&quot;parallel&quot;, &quot;parallel&quot;, &quot;reduction&quot;]} ins(%extracted_slice, %extracted_slice_3, %extracted_slice_4 : tensor&lt;32x32xf8E4M3FN&gt;, tensor&lt;32x1xf8E8M0FNU&gt;, tensor&lt;32x32xf32&gt;) outs(%extracted_slice_5 : tensor&lt;32x32xf32&gt;) {
+</span></code></pre>
+<p>Two lines in that nest are why the <code>K</code> tile is the block size:</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">%2 = affine.apply #map(%arg6)
+</span><span class="z-text z-plain">%extracted_slice_3 = tensor.extract_slice %arg1[0, %2] [32, 1] [1, 1] : tensor&lt;32x2xf8E8M0FNU&gt; to tensor&lt;32x1xf8E8M0FNU&gt;
+</span></code></pre>
+<p><code>#map</code> is <code>(d0) -&gt; (d0 floordiv 32)</code>, so <code>%2</code> is the block index, computed once per tile from <code>%arg6</code>, the loop counter of the enclosing <code>scf.for</code>, and hoisted above the generic. <code>%extracted_slice_3</code> uses it to take a <code>[32, 1]</code> window of the scale, one block-column, and hands the generic a <code>tensor&lt;32x1xf8E8M0FNU&gt;</code>. Inside the tile the reduction runs over 32 contraction positions that all belong to one block, so the scale each row needs is a single value, constant for the entire reduction.</p>
+<p>This is the point at which the tiled form should vectorize. Adding <code>transform.structured.vectorize %tiled</code> to the schedule, so that vectorization runs on the handle tiling returned rather than on a fresh match, gives:</p>
+<pre class="z-code"><code><span class="z-text z-plain">&lt;stdin&gt;:7:10: error: Attempted to vectorize, but failed
+</span></code></pre>
+<p>The message names no cause, and its location is misleading: it points at line 7 of the input, the untiled generic, because the tiled op inherits the location of the op it was built from. Re-running with <code>--debug-only=linalg-vectorization</code> says what happened:</p>
+<pre class="z-code"><code><span class="z-text z-plain">[linalg-vectorization Vectorization.cpp:2537] Attempting to vectorize: %3 = linalg.generic
+</span><span class="z-text z-plain">  {indexing_maps = [affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;,
+</span><span class="z-text z-plain">                    affine_map&lt;(d0, d1, d2) -&gt; (d0, d2 floordiv 32)&gt;, ...]}
+</span><span class="z-text z-plain">  ins(%extracted_slice, %extracted_slice_3, %extracted_slice_4
+</span><span class="z-text z-plain">      : tensor&lt;32x32xf8E4M3FN&gt;, tensor&lt;32x1xf8E8M0FNU&gt;, tensor&lt;32x32xf32&gt;)
+</span><span class="z-text z-plain">[linalg-vectorization Vectorization.cpp:2268] precondition failed: not projected permutations
+</span><span class="z-text z-plain">[linalg-vectorization Vectorization.cpp:2545] Vectorization pre-conditions failed
+</span></code></pre>
+<p>The operand types in that dump are <code>32x32</code> and <code>32x1</code>, so the op under consideration is the tiled one, not the original. The gate is <code>allIndexingsAreProjectedPermutation</code>, called from <code>vectorizeLinalgOpPrecondition</code> before any vectorization work begins. It requires every indexing map on the op to be a projected permutation, which rules out arithmetic on an iteration dimension. Three of the four maps qualify. <code>(d0, d2 floordiv 32)</code> performs a division on <code>d2</code>, and one map is enough to reject the op.</p>
+<p>Tiling changed the scale's behavior: the value is now fixed across the tile's reduction, and the block index has been lifted into an <code>affine.apply</code> above the loop body. It did not change a character of the map, which still reads <code>d2 floordiv 32</code>. The precondition inspects the map's expression, so it sees the division and stops. An affine map stores an expression, not the range its dimensions take, so nothing in it records that <code>d2</code> now runs to 32 instead of 64.</p>
+<p>Untiled, the same refusal is the right call. The scale changes partway through the reduction, lanes covering <code>k = 31</code> and <code>k = 32</code> need different values, and there is nothing to broadcast. Tiling is what makes the access uniform, and the map is the same either way.</p>
+<p>The access is not unvectorizable. It is unvectorizable as written.</p>
+<h2 id="what-the-map-would-have-to-become">What the map would have to become<a class="zola-anchor" href="#what-the-map-would-have-to-become" aria-label="Anchor link for: what-the-map-would-have-to-become" style="visibility: hidden;"></a>
+</h2>
+<p>Written differently, the same access vectorizes. Take the tiled nest exactly as the schedule emitted it and change one line:</p>
+<pre data-lang="diff" class="language-diff z-code"><code class="language-diff" data-lang="diff"><span class="z-source z-diff"><span class="z-markup z-deleted z-diff"><span class="z-punctuation z-definition z-deleted z-diff">-</span>#map2 = affine_map&lt;(d0, d1, d2) -&gt; (d0, d2 floordiv 32)&gt;
+</span></span><span class="z-source z-diff"><span class="z-markup z-inserted z-diff"><span class="z-punctuation z-definition z-inserted z-diff">+</span>#map2 = affine_map&lt;(d0, d1, d2) -&gt; (d0, 0)&gt;
+</span></span></code></pre>
+<p>The map's second result stops being a division on <code>d2</code> and becomes a literal. Nothing else moves: the <code>extract_slice</code> still cuts a <code>[32, 1]</code> window, the scale operand is still <code>tensor&lt;32x1xf8E8M0FNU&gt;</code>, and the loops, the <code>affine.apply</code> and the payload are untouched.</p>
+<p>Vectorizing the edited nest needs a schedule that only vectorizes, since the file already holds the tiled loops:</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">module attributes {transform.with_named_sequence} {
+</span><span class="z-text z-plain">  transform.named_sequence @__transform_main(%root: !transform.any_op {transform.readonly}) {
+</span><span class="z-text z-plain">    %g = transform.structured.match ops{[&quot;linalg.generic&quot;]} in %root
+</span><span class="z-text z-plain">      : (!transform.any_op) -&gt; !transform.any_op
+</span><span class="z-text z-plain">    transform.structured.vectorize %g : !transform.any_op
+</span><span class="z-text z-plain">    transform.yield
+</span><span class="z-text z-plain">  }
+</span><span class="z-text z-plain">}
+</span></code></pre>
+<p>Run against the edited file, it succeeds, with the map aliases reassigned in the output (loops and constants elided):</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">#map = affine_map&lt;(d0) -&gt; (d0 floordiv 32)&gt;
+</span><span class="z-text z-plain">#map1 = affine_map&lt;(d0, d1) -&gt; (d0, 0, d1)&gt;
+</span><span class="z-text z-plain">#map2 = affine_map&lt;(d0, d1) -&gt; (d0, 0, 0)&gt;
+</span><span class="z-text z-plain">#map3 = affine_map&lt;(d0, d1) -&gt; (0, d1, d0)&gt;
+</span><span class="z-text z-plain">...
+</span><span class="z-text z-plain">        %2 = affine.apply #map(%arg6)
+</span><span class="z-text z-plain">        ...
+</span><span class="z-text z-plain">        %4 = vector.transfer_read %extracted_slice[%c0_9, %c0_9], %3 {permutation_map = #map1} : tensor&lt;32x32xf8E4M3FN&gt;, vector&lt;32x32x32xf8E4M3FN&gt;
+</span><span class="z-text z-plain">        %6 = vector.transfer_read %extracted_slice_3[%c0_9, %c0_9], %5 {permutation_map = #map2} : tensor&lt;32x1xf8E8M0FNU&gt;, vector&lt;32x32x32xf8E8M0FNU&gt;
+</span><span class="z-text z-plain">        %8 = vector.transfer_read %extracted_slice_4[%c0_9, %c0_9], %7 {permutation_map = #map3} : tensor&lt;32x32xf32&gt;, vector&lt;32x32x32xf32&gt;
+</span><span class="z-text z-plain">        %10 = vector.transfer_read %extracted_slice_5[%c0_9, %c0_9], %9 : tensor&lt;32x32xf32&gt;, vector&lt;32x32xf32&gt;
+</span><span class="z-text z-plain">        ...
+</span><span class="z-text z-plain">        %15 = vector.multi_reduction &lt;add&gt;, %14, %10 [2] : vector&lt;32x32x32xf32&gt; to vector&lt;32x32xf32&gt;
+</span></code></pre>
+<p>The <code>floordiv</code> did not leave the program. <code>#map</code> on the <code>affine.apply</code> still computes the block index once per tile. What changed is that the scale operand's map no longer recomputes it on every iteration.</p>
+<p>Each input is read into a <code>vector&lt;32x32x32&gt;</code> spanning the tile's <code>(m, n, k)</code> space, and each <code>permutation_map</code> says where that operand's own axes land among those three positions. A <code>0</code> marks a position the operand does not vary along, so one value is broadcast across the whole extent. The mantissa map <code>(d0, 0, d1)</code> puts rows at <code>m</code> and columns at <code>k</code> with a <code>0</code> at <code>n</code>. The <code>B</code> map <code>(0, d1, d0)</code> carries its <code>0</code> at <code>m</code>. The scale map <code>(d0, 0, 0)</code> is the only one with two zeros: it varies along <code>m</code> alone, so a single read per row serves every position in the tile. That is the access the block format was built for, now stated in the IR.</p>
+<p>The last operation reads against that broadcast. <code>vector.multi_reduction &lt;add&gt;, %14, %10 [2]</code> collapses axis 2, the contraction axis, summing 32 products into each output element. Axis 2 is also the axis the scale's map broadcasts along, and the two are properties of different operands: the scale does not vary along it, the accumulator sums along it.</p>
+<p>The literal is correct because tiling had already made the division redundant. <code>tensor.extract_slice %arg1[0, %2] [32, 1] [1, 1]</code> uses the block index in <code>%2</code> to cut out one column. By the time the generic runs, one column is all it has, and inside the tile <code>d2</code> ranges over 0 to 31, so <code>d2 floordiv 32</code> returns 0 on every iteration. Writing <code>0</code> states what the expression evaluates to.</p>
+<p>That the constant is admitted at all comes down to a parameter. <code>allIndexingsAreProjectedPermutation</code> calls <code>isProjectedPermutation</code> with <code>allowZeroInResults</code> set to true, while the method's own default in <code>AffineMap.h</code> is false. Constant-zero results are let through by an allowance the header marks for removal once they are supported more broadly. Arithmetic on a dimension is refused either way. Dropping the result entirely, for a map of <code>(d0)</code> over an operand with its unit axis removed, gives the same broadcast without relying on the allowance.</p>
+<p>Untiled, either version would be a miscompile. The scale operand is the full <code>32x2</code>, <code>k</code> sweeps 0 to 63 in one loop, and the two halves of that sweep need different columns; a map that always reads the first block would use its factor for all 64 positions. The rewrite is valid only where tiling has already confined <code>k</code> to one block, which is why it has to be recognized rather than simply applied.</p>
+<h2 id="the-range-the-verifier-already-knows">The range the verifier already knows<a class="zola-anchor" href="#the-range-the-verifier-already-knows" aria-label="Anchor link for: the-range-the-verifier-already-knows" style="visibility: hidden;"></a>
+</h2>
+<p>The one-line edit was made by hand. Checking whether anything upstream makes it starts from the tiled nest as the schedule emitted it, with <code>d2 floordiv 32</code> still in the scale map. Every pass registered in <code>mlir-opt</code> at this revision was tried on that nest, one at a time. Of those that accept it, none rewrites the scale map. The two transform ops that expose the same folding patterns leave it unchanged. No test under <code>mlir/test/Dialect/Linalg</code> starts from a <code>linalg</code> map containing a <code>floordiv</code>.</p>
+<p>The candidate that should have caught it is unit-dim folding. The <code>1</code> in <code>tensor&lt;32x1xf8E8M0FNU&gt;</code> is why the column index can only ever be 0, and <code>--linalg-fold-unit-extent-dims</code> exists to remove size-1 axes from <code>linalg</code> ops. It is not inert on this operand: it rank-reduces the scale slice to <code>tensor&lt;32&gt;</code> and then expands it straight back to <code>tensor&lt;32x1&gt;</code>, because a map needs one result per axis and the generic's scale map still has two. What it never edits is the map.</p>
+<p>The reason is how it decides an axis can go. Its <code>isUnitDim</code> check clears a size-1 axis for removal only when the index into it is the constant 0: either written as <code>0</code>, or reducing to <code>0</code> after the loops being dropped, those with a single iteration, are replaced by zero. Every loop in the tile runs 32 times, so no loop is dropped and nothing is substituted; the test comes down to whether the index is written as <code>0</code>. <code>d2 floordiv 32</code> is not, and the check has no way to see a zero that holds only because <code>d2</code> stops at 31. Hand the same pass the edited map, with its literal <code>0</code>, and it removes the axis and rewrites the map to <code>(d0)</code> over <code>tensor&lt;32xf8E8M0FNU&gt;</code>.</p>
+<p>The fact the edit relies on is already in the op, and the verifier computes it. The map says which column to read for a given <code>d2</code>, not how far <code>d2</code> goes; the operands do. The mantissa slice is 32 columns wide and read at column <code>d2</code>, so <code>d2</code> stops at 31. The verifier behind <code>IndexingMapOpInterface</code> inverts the indexing maps taken together to recover how many times each loop runs, the same whole-system inversion that let the <code>floordiv</code> through in <a href="https://josephbak.github.io/posts/lowering-mx-block-matmul/">Post 3</a>. It then evaluates every map result at the first and last iteration and checks it against the operand's size. For <code>d2 floordiv 32</code> both ends come out 0, and a division that never decreases as <code>d2</code> grows cannot be anything else in between. Change the divisor to 16, so the last iteration asks for a second column, and the op no longer verifies:</p>
+<pre class="z-code"><code><span class="z-text z-plain">probe-oob.mlir:21:14: error: &#39;linalg.generic&#39; op inferred input/output operand #1 has shape&#39;s dimension #1 to be greater than or equal to 2, but found 1
+</span></code></pre>
+<p>The verifier works out that the index is always 0 and uses it to accept the op. None of the passes tried uses it to simplify the map.</p>
+<p>What is missing is a rewrite that asks the verifier's question and keeps the answer. It would evaluate each map result that is not a bare dimension at the first and last iteration of the loops the operand shapes imply, and replace the result with that constant wherever both ends agree and the expression moves in one direction as its dimensions grow. On the untiled op the ends are 0 and 1, so it leaves the map alone, which is the recognition the edit required. The rewrite is not specific to block scales: any map result pinned to a constant by the loop it sits in qualifies. Building it belongs to a later version of this dialect.</p>
+<p>What v1 ships is the tiled form. The next question is whether any of it runs.</p>
+<h2 id="where-the-f8-conversion-stops">Where the f8 conversion stops<a class="zola-anchor" href="#where-the-f8-conversion-stops" aria-label="Anchor link for: where-the-f8-conversion-stops" style="visibility: hidden;"></a>
+</h2>
+<p>Measuring anything means running it, and running it means getting the module down to LLVM IR. Two things stood between the bufferized dialect and a running binary: one pass ordering that is not arbitrary, and one conversion that had no implementation.</p>
+<p>The ordering first. Most of the chain is mechanical, but two steps have to go in a fixed relative order, and the reason is the block scale:</p>
+<pre class="z-code"><code><span class="z-text z-plain">  ...
+</span><span class="z-text z-plain">  --convert-linalg-to-loops
+</span><span class="z-text z-plain">  --lower-affine
+</span><span class="z-text z-plain">  ...
+</span></code></pre>
+<p>In the bufferized <code>linalg.generic</code>, the expression <code>d2 floordiv 32</code> sits inside the indexing map. A map is an attribute on the op, a piece of compile-time data describing how operands are read, and nothing in the module computes it. The generic has no explicit loops and no explicit index arithmetic; the indices are implied by the maps. <code>--convert-linalg-to-loops</code> changes that. Expanding the generic into <code>scf.for</code> means every index now has to be computed by some operation, and the expression appears as an <code>affine.apply</code>, an op that evaluates an affine map on index values and yields an index. The bufferized module contains no <code>affine.apply</code>; after the loop conversion there is one.</p>
+<p><code>--lower-affine</code> is the pass that turns <code>affine.apply</code> into ordinary arithmetic, so it can only run once one exists. Placed earlier it would walk a module where the block index is still a subexpression inside an attribute, find nothing to lower, and report success. The failure would surface much later, as an unlowered affine op arriving at a stage that cannot handle it. The constraint looks like pass-ordering trivia and comes directly from a decision made several stages earlier: put the block index in an affine map, and the pass that lowers affine ops has to wait until something materializes it.</p>
+<p>With that settled the chain runs to completion. What comes out is LLVM dialect except for one operation.</p>
+<p>A small probe isolates it. <code>probe-f8-extf.mlir</code> holds two functions, each taking an eight-bit float as an argument (which avoids compile-time folding), each widening it to <code>f32</code>:</p>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">func.func @extf_e4m3(%x: f8E4M3FN) -&gt; f32 {
+</span><span class="z-text z-plain">  %0 = arith.extf %x : f8E4M3FN to f32
+</span><span class="z-text z-plain">  return %0 : f32
+</span><span class="z-text z-plain">}
+</span><span class="z-text z-plain">func.func @extf_e8m0(%y: f8E8M0FNU) -&gt; f32 {
+</span><span class="z-text z-plain">  %0 = arith.extf %y : f8E8M0FNU to f32
+</span><span class="z-text z-plain">  return %0 : f32
+</span><span class="z-text z-plain">}
+</span></code></pre>
+<p>The obvious thing to reach for does not exist here:</p>
+<pre class="z-code"><code><span class="z-text z-plain">$ mx-opt probe-f8-extf.mlir --arith-expand=&quot;include-f8e4m3fn=true&quot;
+</span><span class="z-text z-plain">error: &lt;Pass-Options-Parser&gt;: no such option include-f8e4m3fn
+</span></code></pre>
+<p>Its counterpart for the scale type does:</p>
+<pre class="z-code"><code><span class="z-text z-plain">$ mx-opt probe-f8-extf.mlir \
+</span><span class="z-text z-plain">    --arith-expand=&quot;include-f8e8m0=true&quot; \
+</span><span class="z-text z-plain">    --convert-arith-to-llvm --convert-func-to-llvm --reconcile-unrealized-casts
+</span></code></pre>
+<pre data-lang="mlir" class="language-mlir z-code"><code class="language-mlir" data-lang="mlir"><span class="z-text z-plain">llvm.func @extf_e4m3(%arg0: i8) -&gt; f32 {
+</span><span class="z-text z-plain">  %0 = builtin.unrealized_conversion_cast %arg0 : i8 to f8E4M3FN
+</span><span class="z-text z-plain">  %1 = arith.extf %0 : f8E4M3FN to f32
+</span><span class="z-text z-plain">  llvm.return %1 : f32
+</span><span class="z-text z-plain">}
+</span><span class="z-text z-plain">llvm.func @extf_e8m0(%arg0: i8) -&gt; f32 {
+</span><span class="z-text z-plain">  %0 = llvm.mlir.constant(23 : i32) : i32
+</span><span class="z-text z-plain">  %1 = llvm.zext %arg0 : i8 to i32
+</span><span class="z-text z-plain">  %2 = llvm.shl %1, %0 : i32
+</span><span class="z-text z-plain">  ...
+</span><span class="z-text z-plain">  %7 = llvm.bitcast %6 : i32 to f32
+</span><span class="z-text z-plain">  llvm.return %7 : f32
+</span><span class="z-text z-plain">}
+</span></code></pre>
+<p>The scale conversion is gone, rewritten as integer work on the byte. The mantissa conversion is still there, spelled exactly as it was written, inside a function that is otherwise LLVM dialect. Above it sits a cast turning the incoming <code>i8</code> back into <code>f8E4M3FN</code>, left behind because the operation it feeds never converted.</p>
+<p>Both signatures became <code>i8</code>, so both types were handled. Only one of the two operations was. With no eight-bit float arithmetic on the CPU path to lower to, the conversion has to be emulated with integer operations, and some pass has to supply that emulation. <code>--arith-expand</code> supplies it for <code>f8E8M0FNU</code> and, on this build, for nothing else.</p>
+<p>Handing the result to <code>mlir-translate</code> ends the attempt:</p>
+<pre class="z-code"><code><span class="z-text z-plain">error: Dialect `arith&#39; not found for custom op &#39;arith.extf&#39;
+</span></code></pre>
+<p>The translator does not register <code>arith</code>, so a module still carrying an <code>arith</code> operation cannot be parsed at all. No LLVM IR comes out, and the backend never sees the conversion. What the backend would have done with it is a question this attempt never reaches.</p>
+<p>Upstream has since closed the gap. Commit <code>c3c6e286e7eb9</code>, landed 1 September 2026, adds the missing expansion for <code>f8E4M3FN</code> in both directions and exposes it as <code>include-f8e4m3fn</code>. That is a little over three months after the build this post is pinned to.</p>
+<p>So the two gaps are not the same kind of thing. The vectorizer refused: a check was in place, doing what it was written to do, and getting past it needs a rewrite that none of the passes tried performs. It is still open. This one was not a refusal. No check stood in the way; the implementation was absent, and it has since landed.</p>
+<p>That does not restore the measurement. An emulated conversion is a sequence of integer operations standing in for hardware that is not present, and timing it measures the stand-in. What the format actually changes is how many bytes move, and that can be counted without running anything.</p>
+<h2 id="what-the-intensity-number-is-made-of">What the intensity number is made of<a class="zola-anchor" href="#what-the-intensity-number-is-made-of" aria-label="Anchor link for: what-the-intensity-number-is-made-of" style="visibility: hidden;"></a>
+</h2>
+<p>The roofline for this workload is computed from the bufferized memref types: shape times element width, each buffer counted once.</p>
+<p>Three numbers describe a workload on a machine. Operational intensity, written <code>I</code>, is how many floating-point operations the workload performs per byte it moves, and it belongs to the workload. Bandwidth, <code>BW</code>, is how fast the machine moves bytes, and peak rate, <code>P_peak</code>, is how fast it does arithmetic; both belong to the machine. Attainable performance is whichever ceiling binds first:</p>
+<p>$$P = \min(P_{\text{peak}}, \text{BW} \times I)$$</p>
+<p>The two ceilings meet at an intensity called the ridge, <code>P_peak / BW</code>, a fixed property of the hardware. Quantization does not move the ridge. It changes <code>I</code>, sliding the workload along a roof that stays put. The machine here is a base M4, whose 120 GB/s of LPDDR5X bandwidth Apple publishes; its peak arithmetic rate is not published, and the figure used here, 560 GFLOP/s, is reverse-engineered from core count, FMA units, lane width and clock. The plot draws the ridge as a band, 30% either side, for that reason.</p>
+<p>For <code>M=32, N=64, K=64</code> with a block size of 32, against an all-<code>f32</code> baseline:</p>
+<table><thead><tr><th></th><th>bytes</th><th>FLOPs</th><th>I</th></tr></thead><tbody>
+<tr><td>f32</td><td>32,768</td><td>262,144</td><td>8.00</td></tr>
+<tr><td>mx</td><td>26,688</td><td>393,216</td><td>14.73</td></tr>
+</tbody></table>
+<p>Intensity rises by 1.84×, and that is the least useful number here, because it is a product of two effects that mean opposite things:</p>
+<p>$$1.84 = 1.23 \times 1.50$$</p>
+<p>The 1.23× is the byte ratio and it is the data-movement result. The 1.50× is FLOP inflation: the mx payload performs three floating-point operations per point where the baseline performs two, the extra one being the multiply that reconstructs <code>A</code> from its mantissa and scale. Intensity is FLOPs over bytes, so moving fewer bytes raises it and doing more arithmetic raises it too. Only the first is a win.</p>
+<p>The 1.23× byte ratio itself needs unpacking, because larger and more flattering numbers are available. Narrowing the mantissa from <code>f32</code> to <code>f8E4M3FN</code> is exactly 4× on those bytes, 8,192 down to 2,048. Add the block scale back and <code>A</code> as a whole goes from 8,192 to 2,112, or 3.88×. But <code>B</code> and the accumulator are still <code>f32</code> in v1:</p>
+<pre class="z-code"><code><span class="z-text z-plain">f32   AAAAAAAABBBBBBBBBBBBBBBBCCCCCCCC  32,768 bytes
+</span><span class="z-text z-plain">mx    AABBBBBBBBBBBBBBBBCCCCCCCC        26,688 bytes
+</span><span class="z-text z-plain">
+</span><span class="z-text z-plain">A = A operand (mantissa + scale)   B = B operand   C = accumulator
+</span><span class="z-text z-plain">1 character = 1 KiB, widths rounded
+</span></code></pre>
+<p><code>A</code> shrinks to a quarter of its width while the 24,576 bytes of <code>B</code> and the accumulator do not move at all. A 3.88× reduction on one operand is a 1.23× reduction on the working set. The 4× is a true statement about a format; the 1.23× is a true statement about this workload.</p>
+<p>Both intensities sit in the wrong region to show what quantization is for. With this machine's bandwidth and peak the ridge falls near 4.7 FLOPs per byte, and 8.00 and 14.73 both sit above the band around it, so both are compute-bound. The movement is inside the compute-bound region, not a crossing out of the memory-bound one. That is not because the problem is small. It follows from the reuse in a matmul: each element of <code>A</code> feeds <code>N</code> products and each element of <code>B</code> feeds <code>M</code>, so the <code>f32</code> baseline alone performs 262,144 operations over 32,768 bytes and sits above the ridge before anything is quantized.</p>
+<p>The regime where the memory result would appear is decode. In language-model inference, prefill processes the whole prompt at once and decode generates one token at a time, which means the activation matrix has a single row: <code>M = 1</code>. The baseline FLOP count is <code>2·M·N·K</code> and scales with <code>M</code>, so it collapses. The <code>B</code> operand is <code>K×N</code> and has to be read in full regardless of how many rows it multiplies. Little arithmetic over the same weight bytes puts intensity far below the ridge, and the workload becomes memory-bound.</p>
+<p>That regime also shows what v1 does not buy. At <code>M=1</code> the <code>A</code> operand is one row of 64 values, 256 bytes against <code>B</code>'s 16,384, so quantizing it moves the total from 16,896 bytes to 16,706. Intensity still rises 1.52×, and <code>1.01 × 1.50</code> is where it comes from. Almost the entire apparent gain is the dequantization multiply, and the memory win is a rounding error.</p>
+<p><img src="/img/roofline.svg"
+     alt="Analytical roofline for mx.block_matmul against an f32 baseline at two shapes"
+     style="filter: none; background: #fff;"></p>
+<p>Both shapes move rightward, which is what an optimization is supposed to look like, and at neither shape is the movement mostly a memory result. The plot cannot separate the byte saving from the added arithmetic, which is why each arrow is labelled with its decomposition rather than the shift alone.</p>
+<h2 id="reading-the-same-model-as-a-duration">Reading the same model as a duration<a class="zola-anchor" href="#reading-the-same-model-as-a-duration" aria-label="Anchor link for: reading-the-same-model-as-a-duration" style="visibility: hidden;"></a>
+</h2>
+<p>The roofline's axes are intensity and rate. Neither is time, and time is what quantization is supposed to improve.</p>
+<p>The same two ceilings give it:</p>
+<p>$$T = \max\left(\frac{\text{Bytes}}{\text{BW}},\ \frac{\text{FLOPs}}{P_{\text{peak}}}\right)$$</p>
+<p>Moving the data and doing the arithmetic happen at once, so whichever takes longer sets the duration. That is the attainable-rate formula seen from the other side, since dividing the work by the lower of two rates gives the longer of two times. Both inputs are ceilings, so the durations that come out are floors: the best case, not a prediction.</p>
+<p><img src="/img/roofline-time.svg"
+     alt="Modelled time per call for the f32 baseline and mx block matmul at both shapes"
+     style="filter: none; background: #fff;"></p>
+<p>At <code>M=32</code> the arithmetic ceiling binds, so the mx path performs 1.5× the operations at the same peak rate and takes 1.5× as long. Both points sat on the roofline's ceiling at the same height, and the one further right is the slower one.</p>
+<p>At <code>M=1</code> the bandwidth ceiling binds, and 16,706 bytes against 16,896 is a 1% difference, so the two durations are level at about 140 ns. The roofline nevertheless puts the mx point at 88 GFLOP/s against the baseline's 58. GFLOP/s counts operations per second, and the mx path performs 1.5× the operations in the same time, so the rate rises. The operations it added are dequantization: work that unpacks the format rather than producing any part of the answer. The axis cannot tell a multiply that computes the result from one that undoes the compression, and it credits both.</p>
+<p>The ratios are worth more than the absolute nanoseconds. Real code reaches some fraction of each ceiling, so every absolute duration here is too short by some factor. A ratio of two durations is the more portable number: if both precisions reach a similar fraction of peak, dividing both durations by that fraction leaves the 1.5× at <code>M=32</code> unchanged. That is an assumption rather than a guarantee: the mx path loads one-byte values, widens them with an emulated conversion, and carries an extra multiply. If it reaches a lower fraction of peak than the baseline, the real gap is wider than the model's 1.5×, never narrower: the arithmetic ceiling binds at <code>M=32</code>, and more arithmetic against the same ceiling can only take longer.</p>
+<p>That extra arithmetic is not inherent to the format. <a href="https://josephbak.github.io/posts/lowering-mx-block-matmul/">Post 3</a> lowers <code>mx.block_matmul</code> to a single fused <code>linalg.generic</code>, reconstructing each <code>A</code> value inside the loop nest rather than materializing a dequantized <code>f32</code> tensor first. The reconstruction therefore sits inside the <code>n</code> loop and runs once per output column: <code>M·N·K</code> multiplies, 131,072 at this shape, where dequantizing <code>A</code> once would have cost <code>M·K</code>, or 2,048. Added to the baseline's 262,144 operations, that is the entire 1.50×. Fusion buys the <code>f32</code> intermediate never being written, at the cost of arithmetic, which is the right trade when the problem is memory-bound and the wrong one when it is compute-bound.</p>
+<p>So neither shape comes out faster. At <code>M=32</code> the mx path takes 1.5× as long; at <code>M=1</code> the two are level, within 1%. That is the state of <code>A</code>-only quantization with <code>B</code> and the accumulator still in <code>f32</code>: the extra multiply is paid on every point and the byte saving is too small to repay it.</p>
+<p>The modelled durations inherit the uncertainty in the reverse-engineered peak rate. At <code>M=32</code> both variants are bound by <code>FLOPs / P_peak</code>, so a different peak moves both bars and leaves the 1.5× between them intact. The intensity values do not depend on it at all, since <code>FLOPs / Bytes</code> comes from the shapes and element widths alone.</p>
+<h2 id="what-the-diagnosis-bought">What the diagnosis bought<a class="zola-anchor" href="#what-the-diagnosis-bought" aria-label="Anchor link for: what-the-diagnosis-bought" style="visibility: hidden;"></a>
+</h2>
+<p>The dialect lowered, bufferized, and tiled without incident. Then the vectorizer refused the scale map, no pass would write the zero the verifier had already worked out, the <code>f8</code> conversion had no implementation on the CPU path, and the intensity number at the end folded a saving and an overhead into one figure.</p>
+<p>Both gaps were real on <code>llvm-project</code> at <code>6f92180</code>. The <code>f8</code> conversion has since been implemented upstream, so a build from today lowers what this one could not. The vectorization gap remains: closing it needs a rewrite that recognizes a map result fixed at a constant by the loop it sits in, and none of the passes tried performs one. <code>isUnitDim</code>, the check that comes closest, is unchanged at HEAD. Any block-scaled format whose scale map indexes blocks with a <code>floordiv</code> meets the same wall.</p>
+<p>What v1 has is the lowering and the byte accounting. Four ops, a parameterized type, three canonicalizations, a conversion to <code>linalg</code> on tensors, a 1:N split that bufferizes copy-free, and a tiled schedule whose block-aligned <code>K</code> makes the broadcast form reachable. The byte model built on that works from types and shapes, so it can price a change the code does not implement, which is how a quantized <code>B</code> gets a number below without existing. The code, the tests, and the scripts behind every number in this post are in the <a rel="nofollow noreferrer" href="https://github.com/josephbak/mlir-mx">mlir-mx repository</a>.</p>
+<p>What v1 does not have is a speedup. Quantizing <code>A</code> pays at neither shape, because at <code>M=32</code> arithmetic binds and at <code>M=1</code> <code>A</code> is a rounding error against <code>B</code>. Quantizing <code>B</code> is what moves the decode point. Under the same byte arithmetic, quantizing both operands at <code>M=1</code> takes the working set from 16,896 bytes to 4,546 and the modelled time from 141 ns to 38 ns, still memory-bound, so the time ratio and the byte ratio are the same 3.7×. That is a projection from the type information rather than a result, and a second version would make it one: quantize <code>B</code>, build the missing rewrite, and measure on a target that converts <code>f8</code> natively rather than emulating it.</p>
+<p>The series worked down one pipeline, a stage per post. <a href="https://josephbak.github.io/posts/designing-mx-dialect/">Post 1</a> put a block scale into a type. <a href="https://josephbak.github.io/posts/canonicalization-e8m0-power-of-two/">Post 2</a> found the power-of-two structure in the scale format and what it makes exact. <a href="https://josephbak.github.io/posts/lowering-mx-block-matmul/">Post 3</a> reduced block-scaled matmul to one <code>floordiv</code> in one affine map. <a href="https://josephbak.github.io/posts/bufferizing-block-scaled-types/">Post 4</a> split one value into two buffers and accumulated in place. This post took all of it to the last stage, located the two points where upstream stops, one before vectorization and one before translation, and priced the result from the types the earlier posts built.</p>
+
+      </article>
+
+      
+      
+
+      
+      
+    </div>
+
+    
+
+
+<footer>
+  <div class="left">
+    <div class="copyright">
+      © 2026 &lt;joseph bak&gt;
+      
+      <span>|</span>
+      Built with <a href="https://www.getzola.org" rel="noreferrer" target="_blank">zola</a> and <a href="https://github.com/isunjn/serene" rel="noreferrer" target="_blank">serene</a>
+      
+    </div>
+  </div>
+
+  <div class="right">
+    
+    
+      
+    
+    
+    <a id="rss-btn" href="https://josephbak.github.io/posts/feed.xml">RSS</a>
+    
+    
+
+    
+    
+    
+    <button id="theme-toggle" aria-label="theme switch">
+      <span class="moon-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M10 7C10 10.866 13.134 14 17 14C18.9584 14 20.729 13.1957 21.9995 11.8995C22 11.933 22 11.9665 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C12.0335 2 12.067 2 12.1005 2.00049C10.8043 3.27098 10 5.04157 10 7ZM4 12C4 16.4183 7.58172 20 12 20C15.0583 20 17.7158 18.2839 19.062 15.7621C18.3945 15.9187 17.7035 16 17 16C12.0294 16 8 11.9706 8 7C8 6.29648 8.08133 5.60547 8.2379 4.938C5.71611 6.28423 4 8.9417 4 12Z" fill="currentColor"></path></svg>
+</span>
+      <span class="sun-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M12 18C8.68629 18 6 15.3137 6 12C6 8.68629 8.68629 6 12 6C15.3137 6 18 8.68629 18 12C18 15.3137 15.3137 18 12 18ZM12 16C14.2091 16 16 14.2091 16 12C16 9.79086 14.2091 8 12 8C9.79086 8 8 9.79086 8 12C8 14.2091 9.79086 16 12 16ZM11 1H13V4H11V1ZM11 20H13V23H11V20ZM3.51472 4.92893L4.92893 3.51472L7.05025 5.63604L5.63604 7.05025L3.51472 4.92893ZM16.9497 18.364L18.364 16.9497L20.4853 19.0711L19.0711 20.4853L16.9497 18.364ZM19.0711 3.51472L20.4853 4.92893L18.364 7.05025L16.9497 5.63604L19.0711 3.51472ZM5.63604 16.9497L7.05025 18.364L4.92893 20.4853L3.51472 19.0711L5.63604 16.9497ZM23 11V13H20V11H23ZM4 11V13H1V11H4Z" fill="currentColor"></path></svg>
+</span>
+    </button>
+    
+  </div>
+</footer>
+
+
+
+
+<dialog id="rss-mask">
+  <div>
+    <a href="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml">https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml</a>
+    
+    
+    <button autofocus aria-label="copy" data-link="https:&#x2F;&#x2F;josephbak.github.io&#x2F;posts&#x2F;feed.xml" data-copy-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" data-check-icon="&lt;svg xmlns=&quot;http:&#x2F;&#x2F;www.w3.org&#x2F;2000&#x2F;svg&quot; viewBox=&quot;0 0 24 24&quot; width=&quot;18&quot; height=&quot;18&quot;&gt;&lt;path d=&quot;M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z&quot; fill=&quot;currentColor&quot;&gt;&lt;&#x2F;path&gt;&lt;&#x2F;svg&gt;
+" >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"><path d="M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z" fill="currentColor"></path></svg>
+
+    </button>
+  </div>
+</dialog>
+
+
+
+  </main>
+</div>
+
+  
+<script src="/js/lightense.min.js"></script>
+
+
+  <script src="https://josephbak.github.io/js/main.js"></script>
+</body>
+
+</html>
